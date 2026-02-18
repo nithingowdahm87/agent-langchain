@@ -21,8 +21,11 @@ from src.llm_clients.groq_client import GroqClient
 from src.llm_clients.nvidia_client import NvidiaClient
 from src.utils.resilience import safe_llm_call
 from src.utils.sanitizer import sanitize_feedback
+from src.utils.logger import get_logger, set_correlation_id, configure_logging
+from src.utils.parallel import run_writers_parallel
+from src.audit.decision_log import AuditLog
 
-logger = logging.getLogger("devops-agent.pipeline")
+logger = get_logger("devops-agent.pipeline")
 
 # ================================================================
 # SHARED UTILS
@@ -49,7 +52,7 @@ def guidelines_check(reasoning, guidelines_path):
 
 def human_decision():
     """Standard 3-option human decision gate. Returns 'approve', 'refine', or 'reject'."""
-    choice = input("✅ Approve (y) / 🔄 Refine (r) / ❌ Reject (n): ").strip().lower()
+    choice = input("\n✅ Approve (y) / 🔄 Refine (r) / ❌ Reject (n): ").strip().lower()
     if choice == 'y':
         return 'approve'
     elif choice == 'r':
@@ -57,11 +60,70 @@ def human_decision():
     else:
         return 'reject'
 
+def stage_decision_loop(stage_name, reviewer, drafts, executor, run_executor_fn,
+                        guidelines_path, audit, det_reviewer=None, det_fn=None):
+    """
+    Shared refine loop logic across all stages.
+    
+    Args:
+        stage_name: e.g. "Docker", "K8s"
+        reviewer: Reviewer instance (must have review_and_merge)
+        drafts: list of 3 draft strings
+        executor: Executor instance
+        run_executor_fn: lambda to run executor with final output
+        guidelines_path: path to guidelines file
+        audit: AuditLog instance
+        det_reviewer: optional DeterministicReviewer
+        det_fn: optional function(reviewer, draft) -> (bool, str) for deterministic checks
+    """
+    user_feedback = ""
+    for i in range(3):
+        logger.info("Review cycle %d/3", i + 1, extra={"stage": stage_name})
+        print(f"\n--- Review Cycle {i+1}/3 ---")
+        
+        report = ""
+        if det_reviewer and det_fn:
+            report = "--- VALIDATION REPORT ---\n"
+            labels = ["Draft A", "Draft B", "Draft C"]
+            for idx, d in enumerate(drafts):
+                if d:
+                    report += f"{labels[idx]}: {det_fn(det_reviewer, d)[1]}\n"
+        if user_feedback:
+            report += f"\nUSER FEEDBACK (MUST ADDRESS): {user_feedback}\n"
+        
+        # AI Review
+        logger.info("AI review starting", extra={"stage": stage_name})
+        final, reasoning = reviewer.review_and_merge(drafts[0], drafts[1], drafts[2], validation_report=report)
+        
+        print(f"\n🧠 AI Reasoning:\n{reasoning}\n")
+        print(f"📄 Proposed Output:\n{final}\n")
+        
+        guidelines_check(reasoning, guidelines_path)
+        
+        decision = human_decision()
+        audit.record(stage=stage_name, decision=decision, reasoning=reasoning,
+                     user_feedback=user_feedback, cycle=i + 1, drafts_count=sum(1 for d in drafts if d))
+        
+        if decision == 'approve':
+            run_executor_fn(final)
+            logger.info("Stage approved and executed", extra={"stage": stage_name, "decision": "approve"})
+            return True
+        elif decision == 'refine':
+            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
+            logger.info("Refine requested", extra={"stage": stage_name, "decision": "refine"})
+        else:
+            logger.info("Stage rejected", extra={"stage": stage_name, "decision": "reject"})
+            return False
+    
+    logger.warning("Max refine cycles reached", extra={"stage": stage_name})
+    print("⚠️  Max refine cycles reached.")
+    return False
+
 
 # ================================================================
 # STAGE 2: Dockerfile
 # ================================================================
-def run_docker_stage(project_path, context_data):
+def run_docker_stage(project_path, context_data, audit):
     print_header("Stage 2: Docker Infrastructure Generation")
     context_str = json.dumps(context_data, indent=2)
     
@@ -70,7 +132,7 @@ def run_docker_stage(project_path, context_data):
         wa, wb, wc = DockerWriterA(), DockerWriterB(), DockerWriterC()
         reviewer = DockerReviewer()
     except Exception as e:
-        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
+        logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         class MockWriter:
             def generate(self, p, context=""): return MockClient("MockDocker").call("review")
@@ -86,58 +148,28 @@ def run_docker_stage(project_path, context_data):
         
     det_reviewer, executor = DeterministicReviewer(), DockerExecutor()
     
-    # Generate
-    print("Drafting Dockerfiles (A-Gemini, B-Groq, C-NVIDIA)...")
-    try: d_a = safe_llm_call(lambda p: wa.generate(project_path, context=p), context_str, model_name="Gemini", stage="Docker")
-    except Exception as e:
-        logger.warning("Docker Writer A failed: %s", e); d_a = ""
-    try: d_b = safe_llm_call(lambda p: wb.generate(project_path, context=p), context_str, model_name="Groq", stage="Docker")
-    except Exception as e:
-        logger.warning("Docker Writer B failed: %s", e); d_b = ""
-    try: d_c = safe_llm_call(lambda p: wc.generate(project_path, context=p), context_str, model_name="NVIDIA", stage="Docker")
-    except Exception as e:
-        logger.warning("Docker Writer C failed: %s", e); d_c = ""
+    # Generate in parallel
+    logger.info("Generating drafts in parallel", extra={"stage": "Docker"})
+    print("Drafting Dockerfiles in parallel (Gemini, Groq, NVIDIA)...")
+    drafts = run_writers_parallel(
+        writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
+        generate_fn=lambda w, ctx: w.generate(project_path, context=ctx),
+        context=context_str,
+        stage="Docker",
+    )
     
-    # Refine Loop (up to 3 cycles)
-    user_feedback = ""
-    for i in range(3):
-        print(f"\n--- Review Cycle {i+1}/3 ---")
-        
-        # Deterministic Check
-        report = "--- VALIDATION REPORT ---\n"
-        if d_a: report += f"Draft A: {det_reviewer.review_dockerfile(d_a)[1]}\n"
-        if d_b: report += f"Draft B: {det_reviewer.review_dockerfile(d_b)[1]}\n"
-        if d_c: report += f"Draft C: {det_reviewer.review_dockerfile(d_c)[1]}\n"
-        if user_feedback:
-            report += f"\nUSER FEEDBACK (MUST ADDRESS): {user_feedback}\n"
-        
-        # AI Review
-        final, reasoning = reviewer.review_and_merge(d_a, d_b, d_c, validation_report=report)
-        
-        print(f"\n🧠 AI Reasoning:\n{reasoning}\n")
-        print(f"📄 Proposed Dockerfile:\n{final}\n")
-        
-        # Guidelines Update
-        guidelines_check(reasoning, "configs/guidelines/docker-guidelines.md")
-            
-        decision = human_decision()
-        if decision == 'approve':
-            executor.run(final, project_path)
-            return True
-        elif decision == 'refine':
-            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
-            print("🔄 Re-running review with your feedback...")
-        else:
-            return False
-            
-    print("⚠️  Max refine cycles reached.")
-    return False
+    return stage_decision_loop(
+        stage_name="Docker", reviewer=reviewer, drafts=drafts,
+        executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
+        guidelines_path="configs/guidelines/docker-guidelines.md", audit=audit,
+        det_reviewer=det_reviewer, det_fn=lambda r, d: r.review_dockerfile(d),
+    )
 
 
 # ================================================================
 # STAGE 3: Docker Compose
 # ================================================================
-def run_compose_stage(project_path, context_data):
+def run_compose_stage(project_path, context_data, audit):
     print_header("Stage 3: Docker Compose Generation")
     ctx_str = json.dumps(context_data, indent=2)
     
@@ -150,7 +182,7 @@ def run_compose_stage(project_path, context_data):
         ]
         reviewer = ComposeReviewer()
     except Exception as e:
-        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
+        logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         writers = [
             DockerComposeWriter(MockClient("GeminiMock")),
@@ -164,56 +196,27 @@ def run_compose_stage(project_path, context_data):
         reviewer = MockReviewer()
     executor = DockerComposeExecutor()
     
-    # Generate Drafts
-    print("Drafting Compose Files (Gemini, Groq, NVIDIA)...")
-    drafts = []
-    for idx, w in enumerate(writers):
-        try:
-            print(f"  - Writer {idx+1} working...")
-            drafts.append(w.generate(ctx_str))
-        except Exception as e:
-            print(f"  ⚠️ Writer {idx+1} failed: {e}")
-            drafts.append("")
-    while len(drafts) < 3:
-        drafts.append("")
+    # Generate in parallel
+    logger.info("Generating drafts in parallel", extra={"stage": "Compose"})
+    print("Drafting Compose Files in parallel (Gemini, Groq, NVIDIA)...")
+    drafts = run_writers_parallel(
+        writers=[(writers[0], "Gemini"), (writers[1], "Groq"), (writers[2], "NVIDIA")],
+        generate_fn=lambda w, ctx: w.generate(ctx),
+        context=ctx_str,
+        stage="Compose",
+    )
     
-    # Refine Loop (up to 3 cycles)
-    user_feedback = ""
-    for i in range(3):
-        print(f"\n--- Review Cycle {i+1}/3 ---")
-        
-        report = ""
-        if user_feedback:
-            report = f"USER FEEDBACK (MUST ADDRESS): {user_feedback}"
-        
-        # AI Review
-        print("🧠 AI Architect Reviewing Drafts...")
-        final_yaml, reasoning = reviewer.review_and_merge(drafts[0], drafts[1], drafts[2], validation_report=report)
-        
-        print(f"\nReasoning:\n{reasoning}\n")
-        print(f"Proposed docker-compose.yml:\n{final_yaml}\n")
-        
-        # Guidelines Update
-        guidelines_check(reasoning, "configs/guidelines/docker-guidelines.md")
-        
-        decision = human_decision()
-        if decision == 'approve':
-            executor.run(final_yaml, project_path)
-            return True
-        elif decision == 'refine':
-            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
-            print("🔄 Re-running review with your feedback...")
-        else:
-            return False
-    
-    print("⚠️  Max refine cycles reached.")
-    return False
+    return stage_decision_loop(
+        stage_name="Compose", reviewer=reviewer, drafts=drafts,
+        executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
+        guidelines_path="configs/guidelines/docker-guidelines.md", audit=audit,
+    )
 
 
 # ================================================================
 # STAGE 4: Kubernetes Manifests
 # ================================================================
-def run_k8s_stage(project_path, context_data):
+def run_k8s_stage(project_path, context_data, audit):
     print_header("Stage 4: Kubernetes Manifests")
     ctx_str = json.dumps(context_data, indent=2)
     service_name = context_data.get('project_name', 'myapp')
@@ -223,7 +226,7 @@ def run_k8s_stage(project_path, context_data):
         wa, wb, wc = K8sWriterA(), K8sWriterB(), K8sWriterC()
         reviewer = K8sReviewer()
     except Exception as e:
-        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
+        logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         class MockK8sWriter:
             def generate(self, name, context=""): return MockClient("MockK8s").call("kubernetes")
@@ -240,59 +243,28 @@ def run_k8s_stage(project_path, context_data):
     det_reviewer = DeterministicReviewer()
     executor = K8sExecutor()
     
-    # Generate Drafts
-    print("Drafting Manifests (Gemini, Groq, NVIDIA)...")
-    try: y_a = safe_llm_call(lambda p: wa.generate(service_name, context=p), ctx_str, model_name="Gemini", stage="K8s")
-    except Exception as e:
-        logger.warning("K8s Writer A failed: %s", e); y_a = ""
-    try: y_b = safe_llm_call(lambda p: wb.generate(service_name, context=p), ctx_str, model_name="Groq", stage="K8s")
-    except Exception as e:
-        logger.warning("K8s Writer B failed: %s", e); y_b = ""
-    try: y_c = safe_llm_call(lambda p: wc.generate(service_name, context=p), ctx_str, model_name="NVIDIA", stage="K8s")
-    except Exception as e:
-        logger.warning("K8s Writer C failed: %s", e); y_c = ""
+    # Generate in parallel
+    logger.info("Generating drafts in parallel", extra={"stage": "K8s"})
+    print("Drafting Manifests in parallel (Gemini, Groq, NVIDIA)...")
+    drafts = run_writers_parallel(
+        writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
+        generate_fn=lambda w, ctx: w.generate(service_name, context=ctx),
+        context=ctx_str,
+        stage="K8s",
+    )
     
-    # Refine Loop (up to 3 cycles)
-    user_feedback = ""
-    for i in range(3):
-        print(f"\n--- Review Cycle {i+1}/3 ---")
-        
-        # Deterministic Check
-        report = "--- VALIDATION REPORT ---\n"
-        if y_a: report += f"Draft A: {det_reviewer.review_k8s(y_a)[1]}\n"
-        if y_b: report += f"Draft B: {det_reviewer.review_k8s(y_b)[1]}\n"
-        if y_c: report += f"Draft C: {det_reviewer.review_k8s(y_c)[1]}\n"
-        if user_feedback:
-            report += f"\nUSER FEEDBACK (MUST ADDRESS): {user_feedback}\n"
-        
-        # AI Review
-        print("🧠 AI Architect Reviewing Manifests...")
-        final, reasoning = reviewer.review_and_merge(y_a, y_b, y_c, validation_report=report)
-        
-        print(f"\nReasoning:\n{reasoning}\n")
-        print(f"Proposed manifest.yaml:\n{final}\n")
-        
-        # Guidelines Update
-        guidelines_check(reasoning, "configs/guidelines/k8s-guidelines.md")
-        
-        decision = human_decision()
-        if decision == 'approve':
-            executor.run(final, os.path.join(project_path, "manifest.yaml"))
-            return True
-        elif decision == 'refine':
-            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
-            print("🔄 Re-running review with your feedback...")
-        else:
-            return False
-
-    print("⚠️  Max refine cycles reached.")
-    return False
+    return stage_decision_loop(
+        stage_name="K8s", reviewer=reviewer, drafts=drafts,
+        executor=executor, run_executor_fn=lambda final: executor.run(final, os.path.join(project_path, "manifest.yaml")),
+        guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
+        det_reviewer=det_reviewer, det_fn=lambda r, d: r.review_k8s(d),
+    )
 
 
 # ================================================================
 # STAGE 5: CI/CD (GitHub Actions)
 # ================================================================
-def run_cicd_stage(project_path, context_data):
+def run_cicd_stage(project_path, context_data, audit):
     print_header("Stage 5: CI/CD Generation (GitHub Actions)")
     ctx_str = json.dumps(context_data, indent=2)
     
@@ -301,7 +273,7 @@ def run_cicd_stage(project_path, context_data):
         wa, wb, wc = CIWriterA(), CIWriterB(), CIWriterC()
         reviewer = CIReviewer()
     except Exception as e:
-        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
+        logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         class MockCIWriter:
             def generate(self, ctx): return MockClient("MockCI").call("github actions")
@@ -313,55 +285,27 @@ def run_cicd_stage(project_path, context_data):
         
     executor = CIExecutor()
     
-    # Generate
-    print("Drafting Workflows (Gemini, Groq, NVIDIA)...")
-    try: d_a = safe_llm_call(wa.generate, ctx_str, model_name="Gemini", stage="CI/CD")
-    except Exception as e:
-        logger.warning("CI Writer A failed: %s", e); d_a = ""
-    try: d_b = safe_llm_call(wb.generate, ctx_str, model_name="Groq", stage="CI/CD")
-    except Exception as e:
-        logger.warning("CI Writer B failed: %s", e); d_b = ""
-    try: d_c = safe_llm_call(wc.generate, ctx_str, model_name="NVIDIA", stage="CI/CD")
-    except Exception as e:
-        logger.warning("CI Writer C failed: %s", e); d_c = ""
+    # Generate in parallel
+    logger.info("Generating drafts in parallel", extra={"stage": "CI/CD"})
+    print("Drafting Workflows in parallel (Gemini, Groq, NVIDIA)...")
+    drafts = run_writers_parallel(
+        writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
+        generate_fn=lambda w, ctx: w.generate(ctx),
+        context=ctx_str,
+        stage="CI/CD",
+    )
     
-    # Refine Loop (up to 3 cycles)
-    user_feedback = ""
-    for i in range(3):
-        print(f"\n--- Review Cycle {i+1}/3 ---")
-        
-        report = ""
-        if user_feedback:
-            report = f"USER FEEDBACK (MUST ADDRESS): {user_feedback}"
-        
-        # AI Review
-        print("🧠 AI Architect Merging Workflows...")
-        final, reasoning = reviewer.review_and_merge(d_a, d_b, d_c, validation_report=report)
-        
-        print(f"\nReasoning:\n{reasoning}\n")
-        print(f"Proposed .github/workflows/main.yml:\n{final}\n")
-        
-        # Guidelines Update
-        guidelines_check(reasoning, "configs/guidelines/ci-guidelines.md")
-        
-        decision = human_decision()
-        if decision == 'approve':
-            executor.run(final, project_path)
-            return True
-        elif decision == 'refine':
-            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
-            print("🔄 Re-running review with your feedback...")
-        else:
-            return False
-
-    print("⚠️  Max refine cycles reached.")
-    return False
+    return stage_decision_loop(
+        stage_name="CI/CD", reviewer=reviewer, drafts=drafts,
+        executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
+        guidelines_path="configs/guidelines/ci-guidelines.md", audit=audit,
+    )
 
 
 # ================================================================
 # STAGE 6: Observability (Helm)
 # ================================================================
-def run_observability_stage(project_path, context_data):
+def run_observability_stage(project_path, context_data, audit):
     print_header("Stage 6: Observability (Helm Chart)")
     ctx_str = json.dumps(context_data, indent=2)
     
@@ -370,7 +314,7 @@ def run_observability_stage(project_path, context_data):
         wa, wb, wc = ObservabilityWriterA(), ObservabilityWriterB(), ObservabilityWriterC()
         reviewer = ObservabilityReviewer()
     except Exception as e:
-        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
+        logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         class MockObsWriter:
             def generate(self, ctx): return MockClient("MockObs").call("helm chart")
@@ -383,55 +327,27 @@ def run_observability_stage(project_path, context_data):
         
     executor = ObservabilityExecutor()
     
-    # Generate
-    print("Drafting Helm Charts (Gemini, Groq, NVIDIA)...")
-    try: d_a = safe_llm_call(wa.generate, ctx_str, model_name="Gemini", stage="Observability")
-    except Exception as e:
-        logger.warning("Obs Writer A failed: %s", e); d_a = ""
-    try: d_b = safe_llm_call(wb.generate, ctx_str, model_name="Groq", stage="Observability")
-    except Exception as e:
-        logger.warning("Obs Writer B failed: %s", e); d_b = ""
-    try: d_c = safe_llm_call(wc.generate, ctx_str, model_name="NVIDIA", stage="Observability")
-    except Exception as e:
-        logger.warning("Obs Writer C failed: %s", e); d_c = ""
+    # Generate in parallel
+    logger.info("Generating drafts in parallel", extra={"stage": "Observability"})
+    print("Drafting Helm Charts in parallel (Gemini, Groq, NVIDIA)...")
+    drafts = run_writers_parallel(
+        writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
+        generate_fn=lambda w, ctx: w.generate(ctx),
+        context=ctx_str,
+        stage="Observability",
+    )
     
-    # Refine Loop (up to 3 cycles)
-    user_feedback = ""
-    for i in range(3):
-        print(f"\n--- Review Cycle {i+1}/3 ---")
-        
-        report = ""
-        if user_feedback:
-            report = f"USER FEEDBACK (MUST ADDRESS): {user_feedback}"
-        
-        # AI Review
-        print("🧠 AI Architect Merging Charts...")
-        final, reasoning = reviewer.review_and_merge(d_a, d_b, d_c, validation_report=report)
-        
-        print(f"\nReasoning:\n{reasoning}\n")
-        print(f"Proposed helm/monitoring/Chart.yaml:\n{final}\n")
-        
-        # Guidelines Update (no specific helm guidelines yet, uses k8s)
-        guidelines_check(reasoning, "configs/guidelines/k8s-guidelines.md")
-        
-        decision = human_decision()
-        if decision == 'approve':
-            executor.run(final, project_path)
-            return True
-        elif decision == 'refine':
-            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
-            print("🔄 Re-running review with your feedback...")
-        else:
-            return False
-
-    print("⚠️  Max refine cycles reached.")
-    return False
+    return stage_decision_loop(
+        stage_name="Observability", reviewer=reviewer, drafts=drafts,
+        executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
+        guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
+    )
 
 
 # ================================================================
 # STAGE 7: Debugging / Troubleshooting
 # ================================================================
-def run_debug_stage(project_path, context_data):
+def run_debug_stage(project_path, context_data, audit):
     print_header("Stage 7: Debugging & Troubleshooting")
     ctx_str = json.dumps(context_data, indent=2)
     
@@ -448,6 +364,7 @@ def run_debug_stage(project_path, context_data):
             from src.tools.file_ops import read_file
             error_input = read_file(log_path)
         except Exception as e:
+            logger.error("Could not read log file: %s", e)
             print(f"❌ Could not read log file: {e}")
             return False
     else:
@@ -469,7 +386,7 @@ def run_debug_stage(project_path, context_data):
         wa, wb, wc = DebugWriterA(), DebugWriterB(), DebugWriterC()
         reviewer = DebugReviewer()
     except Exception as e:
-        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
+        logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         class MockDebugA:
             def analyze(self, err, context=""): return MockClient("RCA").call(f"root cause analysis: {err[:100]}")
@@ -489,53 +406,35 @@ def run_debug_stage(project_path, context_data):
     
     executor = DebugExecutor()
     
-    # Analyze
-    print("\n🔍 Analyzing error with 3 specialists...")
-    try: a_rca = safe_llm_call(lambda p: wa.analyze(error_input, context=p), ctx_str, model_name="Gemini", stage="Debug")
-    except Exception as e:
-        logger.warning("Debug Writer A (RCA) failed: %s", e); a_rca = "Analysis failed."
-    try: a_sec = safe_llm_call(lambda p: wb.analyze(error_input, context=p), ctx_str, model_name="Groq", stage="Debug")
-    except Exception as e:
-        logger.warning("Debug Writer B (Security) failed: %s", e); a_sec = "Analysis failed."
-    try: a_perf = safe_llm_call(lambda p: wc.analyze(error_input, context=p), ctx_str, model_name="NVIDIA", stage="Debug")
-    except Exception as e:
-        logger.warning("Debug Writer C (Perf) failed: %s", e); a_perf = "Analysis failed."
+    # Analyze in parallel
+    logger.info("Analyzing with 3 specialists in parallel", extra={"stage": "Debug"})
+    print("\n🔍 Analyzing error with 3 specialists in parallel...")
+    drafts = run_writers_parallel(
+        writers=[(wa, "RCA-Gemini"), (wb, "Security-Groq"), (wc, "Perf-NVIDIA")],
+        generate_fn=lambda w, ctx: w.analyze(error_input, context=ctx),
+        context=ctx_str,
+        stage="Debug",
+    )
+    # Replace empty strings with failure message for debug
+    drafts = [d if d else "Analysis failed." for d in drafts]
     
-    # Refine Loop (up to 3 cycles)
-    user_feedback = ""
-    for i in range(3):
-        print(f"\n--- Review Cycle {i+1}/3 ---")
-        
-        report = ""
-        if user_feedback:
-            report = f"USER FEEDBACK (MUST ADDRESS): {user_feedback}"
-        
-        # Lead SRE Review
-        print("🧠 Lead SRE Synthesizing Incident Report...")
-        incident_report, reasoning = reviewer.review_and_merge(a_rca, a_sec, a_perf, validation_report=report)
-        
-        print(f"\nKey Findings:\n{reasoning}\n")
-        print(f"📋 Incident Report:\n{incident_report}\n")
-        
-        decision = human_decision()
-        if decision == 'approve':
-            executor.run(incident_report, project_path)
-            return True
-        elif decision == 'refine':
-            user_feedback = sanitize_feedback(input("💬 Your feedback (e.g. 'also check for memory leaks'): "))
-            print("🔄 Re-running analysis with your feedback...")
-        else:
-            return False
-
-    print("⚠️  Max refine cycles reached.")
-    return False
+    return stage_decision_loop(
+        stage_name="Debug", reviewer=reviewer, drafts=drafts,
+        executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
+        guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
+    )
 
 
 # ================================================================
 # MAIN WIZARD
 # ================================================================
 def main():
-    print_header("DevOps AI Agent Pipeline v3.0")
+    configure_logging(json_mode=os.environ.get("LOG_JSON", "").lower() == "true")
+    run_id = set_correlation_id()
+    audit = AuditLog(run_id=run_id)
+    
+    print_header(f"DevOps AI Agent Pipeline v4.0 [run:{run_id}]")
+    logger.info("Pipeline started", extra={"stage": "init"})
     
     project_path = input("Enter project path: ").strip()
     if not os.path.exists(project_path):
@@ -545,6 +444,7 @@ def main():
     # STEP 1: ANALYSIS
     print_header("Stage 1: Code Analysis & Caching")
     context = load_or_run_analysis(project_path)
+    logger.info("Context loaded: %s app", context['language'], extra={"stage": "Analysis"})
     print(f"✅ Context Loaded: {context['language']} app, Ports: {context.get('ports')}")
     
     while True:
@@ -560,21 +460,27 @@ def main():
         choice = input("Run Stage: ")
         
         if choice == '2':
-            run_docker_stage(project_path, context)
+            run_docker_stage(project_path, context, audit)
         elif choice == '3':
-            run_compose_stage(project_path, context)
+            run_compose_stage(project_path, context, audit)
         elif choice == '4':
-            run_k8s_stage(project_path, context)
+            run_k8s_stage(project_path, context, audit)
         elif choice == '5':
-            run_cicd_stage(project_path, context)
+            run_cicd_stage(project_path, context, audit)
         elif choice == '6':
-            run_observability_stage(project_path, context)
+            run_observability_stage(project_path, context, audit)
         elif choice == '7':
-            run_debug_stage(project_path, context)
+            run_debug_stage(project_path, context, audit)
         elif choice == '0':
             break
         else:
             print("⏳ Not implemented yet.")
+    
+    # Save audit trail on exit
+    audit_path = audit.save()
+    print(f"\n📝 Audit log saved: {audit_path}")
+    print(audit.summary())
+    logger.info("Pipeline completed", extra={"stage": "exit"})
 
 if __name__ == "__main__":
     main()

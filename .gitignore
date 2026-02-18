@@ -25,6 +25,7 @@ Thumbs.db
 # Project-specific
 .devops_context.json
 debug_reports/
+audit_logs/
 test_github.py
 test_github_configs.py
 run_agent.sh
