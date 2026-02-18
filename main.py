@@ -360,8 +360,16 @@ def run_cicd_stage(project_path, context: ProjectContext, audit, publisher=None,
 # STAGE 6: Observability (Helm)
 # ================================================================
 def run_observability_stage(project_path, context: ProjectContext, audit, publisher=None, run_id="") -> StageResult:
-    print_header("Stage 6: Observability (Helm Chart)")
+    print_header("Stage 6: Observability (Helm & Dashboards)")
     ctx_str = context.model_dump_json(indent=2)
+
+    print("Select output type:")
+    print("1. Helm Chart (Prometheus/Loki) [default]")
+    print("2. Grafana Dashboard JSON")
+    sub_choice = input("Choice (1/2): ").strip()
+    
+    is_dashboard = (sub_choice == '2')
+    target_desc = "Grafana Dashboard" if is_dashboard else "Helm Chart"
     
     # Initialize
     try:
@@ -372,21 +380,27 @@ def run_observability_stage(project_path, context: ProjectContext, audit, publis
         from src.llm_clients.mock_client import MockClient
         class MockObsWriter:
             def generate(self, ctx): return MockClient("MockObs").call("helm chart")
+            def generate_dashboard(self, ctx): return MockClient("MockObs").call("grafana dashboard json")
         wa, wb, wc = MockObsWriter(), MockObsWriter(), MockObsWriter()
         class MockObsReviewer:
             def review_and_merge(self, a, b, c, validation_report=""):
+                if a.strip().startswith("{"):
+                    return (a, "Mock Review: Valid JSON dashboard structure confirmed.")
                 a_clean = a.replace("```yaml", "").replace("```", "")
                 return (a_clean, "Mock Review: Standard Prometheus/Loki stack selected.")
         reviewer = MockObsReviewer()
         
     executor = ObservabilityExecutor()
     
+    generate_fn = (lambda w, ctx: w.generate_dashboard(context=ctx)) if is_dashboard else (lambda w, ctx: w.generate(ctx))
+    output_files = {"k8s/dashboards/dashboard.json": None} if is_dashboard else {"helm/monitoring/Chart.yaml": None}
+    
     # Generate in parallel
-    logger.info("Generating drafts in parallel", extra={"stage": "Observability"})
-    print("Drafting Helm Charts in parallel (Gemini, Groq, NVIDIA)...")
+    logger.info("Generating drafts in parallel", extra={"stage": "Observability", "type": target_desc})
+    print(f"Drafting {target_desc}s in parallel (Gemini, Groq, NVIDIA)...")
     drafts = run_writers_parallel(
         writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
-        generate_fn=lambda w, ctx: w.generate(ctx),
+        generate_fn=generate_fn,
         context=ctx_str,
         stage="Observability",
     )
@@ -395,7 +409,7 @@ def run_observability_stage(project_path, context: ProjectContext, audit, publis
         stage_name="Observability", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
         guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
-        publisher=publisher, output_files={"helm/monitoring/Chart.yaml": None},
+        publisher=publisher, output_files=output_files,
         project_path=project_path, run_id=run_id,
     )
 
@@ -495,7 +509,7 @@ def main():
     audit = AuditLog(run_id=run_id)
     publisher = GitOpsPublisher()
     
-    print_header(f"DevOps AI Agent Pipeline v6.0 [run:{run_id}]")
+    print_header(f"DevOps AI Agent Pipeline v7.0 [run:{run_id}]")
     logger.info("Pipeline started | gitops_mode=%s", publisher.mode, extra={"stage": "init"})
     
     project_path = input("Enter project path: ").strip()

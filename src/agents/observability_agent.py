@@ -25,6 +25,23 @@ class ObservabilityWriterA:
         """.strip()
         return self.llm.call(prompt)
 
+    def generate_dashboard(self, context: str = "") -> str:
+        prompt = f"""
+        You are a Monitoring expert.
+        PROJECT CONTEXT:
+        {context}
+        
+        Generate a Grafana Dashboard JSON model for this application.
+        - Focus on "USE Method" (Utilization, Saturation, Errors).
+        - Add alerts for high latency or error rates.
+        - If Node.js detected: Add Event Loop Lag, Active Handles.
+        - If Python detected: Add GIL contention, GC stats.
+        
+        Return ONLY valid JSON.
+        """.strip()
+        resp = self.llm.call(prompt)
+        return resp.replace("```json", "").replace("```", "").strip()
+
 class ObservabilityWriterB:
     def __init__(self):
         self.llm = GroqClient()
@@ -44,6 +61,21 @@ class ObservabilityWriterB:
         Return ONLY the YAML content for Chart.yaml.
         """.strip()
         return self.llm.call(prompt)
+
+    def generate_dashboard(self, context: str = "") -> str:
+        prompt = f"""
+        You are a Database Reliability Engineer.
+        PROJECT CONTEXT:
+        {context}
+        
+        Generate a Grafana Dashboard JSON model.
+        - Focus on Database metrics if present (Connections, Cache Hit Rate).
+        - Focus on RED method (Rate, Errors, Duration) for APIs.
+        
+        Return ONLY valid JSON.
+        """.strip()
+        resp = self.llm.call(prompt)
+        return resp.replace("```json", "").replace("```", "").strip()
 
 class ObservabilityWriterC:
     def __init__(self):
@@ -65,12 +97,32 @@ class ObservabilityWriterC:
         """.strip()
         return self.llm.call(prompt)
 
+    def generate_dashboard(self, context: str = "") -> str:
+        prompt = f"""
+        You are a Full Stack Engineer.
+        PROJECT CONTEXT:
+        {context}
+        
+        Generate a Grafana Dashboard JSON model.
+        - Include Frontend metrics (Core Web Vitals) if frontend detected.
+        - Include Backend metrics (Throughput, P99 Latency).
+        
+        Return ONLY valid JSON.
+        """.strip()
+        resp = self.llm.call(prompt)
+        return resp.replace("```json", "").replace("```", "").strip()
+
 class ObservabilityReviewer:
     def __init__(self):
         from src.llm_clients.perplexity_client import PerplexityClient
         self.llm = PerplexityClient()
     
-    def review_and_merge(self, yaml_a: str, yaml_b: str, yaml_c: str, validation_report: str = "") -> tuple[str, str]:
+    def review_and_merge(self, a: str, b: str, c: str, validation_report: str = "") -> tuple[str, str]:
+        # Simple heuristic: if input looks like JSON, assume Dashboard review.
+        is_dashboard = a.strip().startswith("{") or b.strip().startswith("{")
+        
+        item_type = "Grafana Dashboard JSON" if is_dashboard else "Helm Chart definition"
+        
         feedback_section = ""
         if validation_report:
             feedback_section = f"""
@@ -78,20 +130,20 @@ class ObservabilityReviewer:
     {validation_report}
     """
         prompt = f"""
-        You are a Lead SRE Architect. Review 3 Helm Chart definitions.
+        You are a Lead SRE Architect. Review 3 {item_type}s.
         
-        Chart A (Standard):
-        {yaml_a}
+        Draft A:
+        {a[:4000]}...
         
-        Chart B (Secure):
-        {yaml_b}
+        Draft B:
+        {b[:4000]}...
         
-        Chart C (Performance):
-        {yaml_c}
+        Draft C:
+        {c[:4000]}...
         {feedback_section}
         TASK:
-        1. Synthesize the BEST `Chart.yaml` for a production-grade monitoring stack.
-        2. Ensure standard dependencies (Prometheus, Loki, Grafana) are present.
+        1. Synthesize the BEST {item_type}.
+        2. Ensure high quality and correctness.
         3. Address all feedback points if any.
         4. Explain reasoning.
         
@@ -100,24 +152,32 @@ class ObservabilityReviewer:
         - point 1
         - point 2
         
-        YAML:
-        ```yaml
+        CONTENT:
+        {'{' if is_dashboard else '```yaml'}
         ...
-        ```
+        {'}' if is_dashboard else '```'}
         """.strip()
         
         response = self.llm.call(prompt)
         try:
-            if "YAML:" in response:
-                parts = response.split("YAML:")
-                return (parts[1].replace("```yaml", "").replace("```", "").strip(), parts[0].replace("REASONING:", "").strip())
+            if "CONTENT:" in response:
+                parts = response.split("CONTENT:")
+                return (parts[1].replace("```yaml", "").replace("```json", "").replace("```", "").strip(), parts[0].replace("REASONING:", "").strip())
             return (response, "AI Review Completed")
-        except Exception: return (yaml_a, "Fallback to Draft A")
+        except Exception: return (a, "Fallback to Draft A (Review Failed)")
 
 class ObservabilityExecutor:
     def run(self, content: str, project_path: str):
-        directory = os.path.join(project_path, "helm", "monitoring")
-        os.makedirs(directory, exist_ok=True)
-        path = os.path.join(directory, "Chart.yaml")
-        write_file(path, content)
-        print(f"✅ Wrote Helm Chart to {path}")
+        # Determine if it's JSON (Dashboard) or YAML (Helm)
+        if content.strip().startswith("{"):
+            directory = os.path.join(project_path, "k8s", "dashboards")
+            os.makedirs(directory, exist_ok=True)
+            path = os.path.join(directory, "dashboard.json")
+            write_file(path, content)
+            print(f"✅ Wrote Grafana Dashboard to {path}")
+        else:
+            directory = os.path.join(project_path, "helm", "monitoring")
+            os.makedirs(directory, exist_ok=True)
+            path = os.path.join(directory, "Chart.yaml")
+            write_file(path, content)
+            print(f"✅ Wrote Helm Chart to {path}")
