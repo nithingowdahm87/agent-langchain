@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+.devops_context.json
+debug_reports/
+test_github.py
+test_github_configs.py
+run_agent.sh
+r.sh
+verification.log
+test_*.py
+list_gemini_models.py
