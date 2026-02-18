@@ -50,6 +50,8 @@ class ProjectContext(BaseModel):
     scripts: dict[str, str] = Field(default_factory=dict)
     file_structure: str = Field(default="")
     raw_context_summary: str = Field(default="")
+    existing_files: dict[str, str] = Field(default_factory=dict, description="Map of found DevOps files to their paths")
+    architecture: list[str] = Field(default_factory=list, description="Detected architectural patterns (e.g. microservices)")
 
     @field_validator("ports", mode="before")
     @classmethod

@@ -41,7 +41,18 @@ def print_header(title):
 
 def load_or_run_analysis(project_path) -> ProjectContext:
     agent = CodeAnalysisAgent(project_path)
-    return agent.get_cached_analysis()
+    context = agent.get_cached_analysis()
+    
+    if context.architecture:
+        print(f"🏗️  Detected Architecture: {', '.join(context.architecture)}")
+        
+    if context.existing_files:
+        print("\n📂 Existing DevOps Files Found:")
+        for type_, path in context.existing_files.items():
+            print(f"  - {type_}: {path}")
+        print("\n💡 Tip: The agent will generate new files. You can choose to overwrite or keep existing ones during review.")
+        
+    return context
 
 def guidelines_check(reasoning, guidelines_path):
     """Run GuidelinesComplianceAgent and print results."""
@@ -528,9 +539,12 @@ def run_cost_stage(project_path, context: ProjectContext, run_id="") -> StageRes
     print_header("Stage 8: Cloud Cost Estimation (FinOps)")
     
     # Check if K8s manifest exists
-    manifest_path = os.path.join(project_path, "manifest.yaml")
+    # Check if K8s manifest exists (new location)
+    manifest_path = os.path.join(project_path, "k8s", "manifest.yaml")
     if not os.path.exists(manifest_path):
-        print("⚠️  No K8s manifest found. Skipping cost estimation.")
+        # Fallback to backend/frontend paths if root not found (simple check)
+        # For now, just warn
+        print(f"⚠️  No K8s manifest found at {manifest_path}. Skipping cost estimation.")
         return StageResult(stage_name="Cost", status=Decision.REJECT, reasoning="No manifest found")
         
     try:

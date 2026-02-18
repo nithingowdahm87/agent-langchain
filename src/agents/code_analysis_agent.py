@@ -38,6 +38,8 @@ class CodeAnalysisAgent:
         self._detect_python(analysis)
         self._detect_ports(analysis)
         self._detect_env_vars(analysis)
+        self._detect_existing_files(analysis)
+        self._detect_architecture(analysis)
         
         # 4. Create Pydantic model
         context = ProjectContext(**analysis)
@@ -121,6 +123,77 @@ class CodeAnalysisAgent:
             envs.update(matches_py)
             
         analysis["env_vars"] = list(envs)
+
+    def _detect_existing_files(self, analysis: dict):
+        """Scans for existing DevOps artifacts."""
+        found = {}
+        for root, dirs, files in os.walk(self.project_path):
+            if ".git" in dirs: dirs.remove(".git")
+            if "node_modules" in dirs: dirs.remove("node_modules")
+            if "__pycache__" in dirs: dirs.remove("__pycache__")
+            
+            for file in files:
+                fpath = os.path.join(root, file)
+                rel_path = os.path.relpath(fpath, self.project_path)
+                
+                if file == "Dockerfile":
+                    found["Dockerfile"] = rel_path
+                elif file in ["docker-compose.yml", "docker-compose.yaml"]:
+                    found["Compose"] = rel_path
+                elif file in ["manifest.yaml", "deployment.yaml", "service.yaml"]:
+                    found["K8s"] = rel_path
+                elif file == "Chart.yaml":
+                    found["Helm"] = rel_path
+                elif file.endswith(".tf"):
+                    found["Terraform"] = rel_path
+            
+            # Check for hidden .github
+            if ".github" in dirs or ".github" in root:
+                gh_path = os.path.join(root, ".github", "workflows")
+                if os.path.exists(gh_path):
+                    found["GitHub Actions"] = os.path.relpath(gh_path, self.project_path)
+
+        analysis["existing_files"] = found
+
+    def _detect_architecture(self, analysis: dict):
+        """Detects architectural patterns like microservices or cloud usage."""
+        arch = set()
+        
+        # 1. Microservices (multiple package.json or requirements.txt in subdirs)
+        pkg_count = 0
+        req_count = 0
+        for root, dirs, files in os.walk(self.project_path):
+            if "node_modules" in dirs: dirs.remove("node_modules")
+            if "venv" in dirs: dirs.remove("venv")
+            
+            if "package.json" in files: pkg_count += 1
+            if "requirements.txt" in files: req_count += 1
+            
+        if pkg_count > 1 or req_count > 1:
+            arch.add("microservices")
+        else:
+            arch.add("monolith")
+            
+        # 2. Cloud SDKs
+        deps = analysis.get("dependencies", [])
+        full_text = analysis.get("raw_context_summary", "").lower()
+        
+        if any(d.startswith("aws-sdk") or "boto3" in d for d in deps):
+            arch.add("aws")
+        if any("google-cloud" in d for d in deps):
+            arch.add("gcp")
+        if "azure" in str(deps):
+            arch.add("azure")
+            
+        # 3. DBs
+        if "mongoose" in str(deps) or "pymongo" in str(deps):
+            arch.add("mongodb")
+        if "pg" in str(deps) or "psycopg2" in str(deps):
+            arch.add("postgres")
+        if "redis" in str(deps):
+            arch.add("redis")
+            
+        analysis["architecture"] = list(arch)
 
     def _save_cache(self, context: ProjectContext):
         write_file(self.cache_file, context.model_dump_json(indent=2))
