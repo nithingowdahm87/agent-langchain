@@ -11,7 +11,7 @@ class DockerWriterA:
         tree = scan_directory(app_path)
         try:
             guidelines = read_file("configs/guidelines/docker-guidelines.md")
-        except:
+        except Exception:
             guidelines = "No specific guidelines found."
 
         prompt = f"""
@@ -40,7 +40,7 @@ class DockerWriterB:
         tree = scan_directory(app_path)
         try:
             guidelines = read_file("configs/guidelines/docker-guidelines.md")
-        except:
+        except Exception:
             guidelines = "No specific guidelines found."
             
         prompt = f"""
@@ -68,7 +68,7 @@ class DockerWriterC:
         tree = scan_directory(app_path)
         try:
             guidelines = read_file("configs/guidelines/docker-guidelines.md")
-        except:
+        except Exception:
             guidelines = "No specific guidelines found."
             
         prompt = f"""
@@ -101,7 +101,7 @@ class DockerReviewer:
         # Load guidelines
         try:
             guidelines = read_file("configs/guidelines/docker-guidelines.md")
-        except:
+        except Exception:
             guidelines = "No specific guidelines available."
         
         # Build comprehensive review prompt

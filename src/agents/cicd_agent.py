@@ -115,7 +115,7 @@ class CIReviewer:
                 parts = response.split("YAML:")
                 return (parts[1].replace("```yaml", "").replace("```", "").strip(), parts[0].replace("REASONING:", "").strip())
             return (response, "AI Review Completed")
-        except: return (yaml_a, "Fallback to Draft A")
+        except Exception: return (yaml_a, "Fallback to Draft A")
 
 class CIExecutor:
     def run(self, content: str, project_path: str):

@@ -59,7 +59,7 @@ class CodeAnalysisAgent:
                     analysis["frameworks"].append("express")
                 if "react" in analysis["dependencies"]:
                     analysis["frameworks"].append("react")
-            except: pass
+            except Exception: pass
 
     def _detect_python(self, analysis: Dict[str, Any]):
         req_path = os.path.join(self.project_path, "requirements.txt")
@@ -135,5 +135,5 @@ class CodeAnalysisAgent:
             try:
                 with open(self.cache_file, "r") as f:
                     return json.load(f)
-            except: return self.analyze()
+            except Exception: return self.analyze()
         return self.analyze()

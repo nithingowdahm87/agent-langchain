@@ -1,0 +1,19 @@
+# ─── DevOps Agent — Core Dependencies ───────────────────────────
+# Use pip-compile to generate requirements.lock:
+#   pip-compile requirements.in -o requirements.lock
+# ─────────────────────────────────────────────────────────────────
+
+# LangChain (Gemini integration)
+langchain
+langgraph
+langchain-google-genai
+
+# HTTP (Groq/NVIDIA/Perplexity API calls)
+requests
+
+# YAML parsing
+pyyaml
+
+# ─── Optional: Production backends (uncomment as needed) ────────
+# boto3              # AWS Secrets Manager
+# hvac               # HashiCorp Vault

@@ -79,7 +79,7 @@ class ComposeReviewer:
                 code = parts[1].replace("```yaml", "").replace("```", "").strip()
                 return code, reasoning
             return response, "Parsing failed, return raw"
-        except: return yaml_a, "Error parsing"
+        except Exception: return yaml_a, "Error parsing"
 
 class DockerComposeExecutor:
     def run(self, content: str, project_path: str):

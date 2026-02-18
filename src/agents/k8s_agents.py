@@ -10,7 +10,7 @@ class K8sWriterA:
     def generate(self, service_name: str, context: str = "") -> str:
         try:
             guidelines = read_file("configs/guidelines/k8s-guidelines.md")
-        except:
+        except Exception:
             guidelines = "No specific guidelines."
             
         prompt = f"""
@@ -34,7 +34,7 @@ class K8sWriterB:
     def generate(self, service_name: str, context: str = "") -> str:
         try:
             guidelines = read_file("configs/guidelines/k8s-guidelines.md")
-        except:
+        except Exception:
             guidelines = "No specific guidelines."
             
         prompt = f"""
@@ -60,7 +60,7 @@ class K8sWriterC:
     def generate(self, service_name: str, context: str = "") -> str:
         try:
             guidelines = read_file("configs/guidelines/k8s-guidelines.md")
-        except:
+        except Exception:
             guidelines = "No specific guidelines."
             
         prompt = f"""
@@ -91,7 +91,7 @@ class K8sReviewer:
         # Load guidelines
         try:
             guidelines = read_file("configs/guidelines/k8s-guidelines.md")
-        except:
+        except Exception:
             guidelines = "No specific guidelines available."
         
         # Build comprehensive review prompt

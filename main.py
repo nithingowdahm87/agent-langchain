@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import logging
 
 # Add src to python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -18,6 +19,10 @@ from src.agents.debugging_agent import DebugWriterA, DebugWriterB, DebugWriterC,
 from src.llm_clients.gemini_client import GeminiClient
 from src.llm_clients.groq_client import GroqClient
 from src.llm_clients.nvidia_client import NvidiaClient
+from src.utils.resilience import safe_llm_call
+from src.utils.sanitizer import sanitize_feedback
+
+logger = logging.getLogger("devops-agent.pipeline")
 
 # ================================================================
 # SHARED UTILS
@@ -83,12 +88,15 @@ def run_docker_stage(project_path, context_data):
     
     # Generate
     print("Drafting Dockerfiles (A-Gemini, B-Groq, C-NVIDIA)...")
-    try: d_a = wa.generate(project_path, context=context_str)
-    except: d_a = ""
-    try: d_b = wb.generate(project_path, context=context_str)
-    except: d_b = ""
-    try: d_c = wc.generate(project_path, context=context_str)
-    except: d_c = ""
+    try: d_a = safe_llm_call(lambda p: wa.generate(project_path, context=p), context_str, model_name="Gemini", stage="Docker")
+    except Exception as e:
+        logger.warning("Docker Writer A failed: %s", e); d_a = ""
+    try: d_b = safe_llm_call(lambda p: wb.generate(project_path, context=p), context_str, model_name="Groq", stage="Docker")
+    except Exception as e:
+        logger.warning("Docker Writer B failed: %s", e); d_b = ""
+    try: d_c = safe_llm_call(lambda p: wc.generate(project_path, context=p), context_str, model_name="NVIDIA", stage="Docker")
+    except Exception as e:
+        logger.warning("Docker Writer C failed: %s", e); d_c = ""
     
     # Refine Loop (up to 3 cycles)
     user_feedback = ""
@@ -117,7 +125,7 @@ def run_docker_stage(project_path, context_data):
             executor.run(final, project_path)
             return True
         elif decision == 'refine':
-            user_feedback = input("💬 Your feedback: ")
+            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
             print("🔄 Re-running review with your feedback...")
         else:
             return False
@@ -193,7 +201,7 @@ def run_compose_stage(project_path, context_data):
             executor.run(final_yaml, project_path)
             return True
         elif decision == 'refine':
-            user_feedback = input("💬 Your feedback: ")
+            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
             print("🔄 Re-running review with your feedback...")
         else:
             return False
@@ -234,12 +242,15 @@ def run_k8s_stage(project_path, context_data):
     
     # Generate Drafts
     print("Drafting Manifests (Gemini, Groq, NVIDIA)...")
-    try: y_a = wa.generate(service_name, context=ctx_str)
-    except: y_a = ""
-    try: y_b = wb.generate(service_name, context=ctx_str)
-    except: y_b = ""
-    try: y_c = wc.generate(service_name, context=ctx_str)
-    except: y_c = ""
+    try: y_a = safe_llm_call(lambda p: wa.generate(service_name, context=p), ctx_str, model_name="Gemini", stage="K8s")
+    except Exception as e:
+        logger.warning("K8s Writer A failed: %s", e); y_a = ""
+    try: y_b = safe_llm_call(lambda p: wb.generate(service_name, context=p), ctx_str, model_name="Groq", stage="K8s")
+    except Exception as e:
+        logger.warning("K8s Writer B failed: %s", e); y_b = ""
+    try: y_c = safe_llm_call(lambda p: wc.generate(service_name, context=p), ctx_str, model_name="NVIDIA", stage="K8s")
+    except Exception as e:
+        logger.warning("K8s Writer C failed: %s", e); y_c = ""
     
     # Refine Loop (up to 3 cycles)
     user_feedback = ""
@@ -269,7 +280,7 @@ def run_k8s_stage(project_path, context_data):
             executor.run(final, os.path.join(project_path, "manifest.yaml"))
             return True
         elif decision == 'refine':
-            user_feedback = input("💬 Your feedback: ")
+            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
             print("🔄 Re-running review with your feedback...")
         else:
             return False
@@ -289,8 +300,8 @@ def run_cicd_stage(project_path, context_data):
     try:
         wa, wb, wc = CIWriterA(), CIWriterB(), CIWriterC()
         reviewer = CIReviewer()
-    except:
-        print("⚠️  API Keys missing. Using MOCK clients.")
+    except Exception as e:
+        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
         from src.llm_clients.mock_client import MockClient
         class MockCIWriter:
             def generate(self, ctx): return MockClient("MockCI").call("github actions")
@@ -304,12 +315,15 @@ def run_cicd_stage(project_path, context_data):
     
     # Generate
     print("Drafting Workflows (Gemini, Groq, NVIDIA)...")
-    try: d_a = wa.generate(ctx_str)
-    except: d_a = ""
-    try: d_b = wb.generate(ctx_str)
-    except: d_b = ""
-    try: d_c = wc.generate(ctx_str)
-    except: d_c = ""
+    try: d_a = safe_llm_call(wa.generate, ctx_str, model_name="Gemini", stage="CI/CD")
+    except Exception as e:
+        logger.warning("CI Writer A failed: %s", e); d_a = ""
+    try: d_b = safe_llm_call(wb.generate, ctx_str, model_name="Groq", stage="CI/CD")
+    except Exception as e:
+        logger.warning("CI Writer B failed: %s", e); d_b = ""
+    try: d_c = safe_llm_call(wc.generate, ctx_str, model_name="NVIDIA", stage="CI/CD")
+    except Exception as e:
+        logger.warning("CI Writer C failed: %s", e); d_c = ""
     
     # Refine Loop (up to 3 cycles)
     user_feedback = ""
@@ -335,7 +349,7 @@ def run_cicd_stage(project_path, context_data):
             executor.run(final, project_path)
             return True
         elif decision == 'refine':
-            user_feedback = input("💬 Your feedback: ")
+            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
             print("🔄 Re-running review with your feedback...")
         else:
             return False
@@ -355,8 +369,8 @@ def run_observability_stage(project_path, context_data):
     try:
         wa, wb, wc = ObservabilityWriterA(), ObservabilityWriterB(), ObservabilityWriterC()
         reviewer = ObservabilityReviewer()
-    except:
-        print("⚠️  API Keys missing. Using MOCK clients.")
+    except Exception as e:
+        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
         from src.llm_clients.mock_client import MockClient
         class MockObsWriter:
             def generate(self, ctx): return MockClient("MockObs").call("helm chart")
@@ -371,12 +385,15 @@ def run_observability_stage(project_path, context_data):
     
     # Generate
     print("Drafting Helm Charts (Gemini, Groq, NVIDIA)...")
-    try: d_a = wa.generate(ctx_str)
-    except: d_a = ""
-    try: d_b = wb.generate(ctx_str)
-    except: d_b = ""
-    try: d_c = wc.generate(ctx_str)
-    except: d_c = ""
+    try: d_a = safe_llm_call(wa.generate, ctx_str, model_name="Gemini", stage="Observability")
+    except Exception as e:
+        logger.warning("Obs Writer A failed: %s", e); d_a = ""
+    try: d_b = safe_llm_call(wb.generate, ctx_str, model_name="Groq", stage="Observability")
+    except Exception as e:
+        logger.warning("Obs Writer B failed: %s", e); d_b = ""
+    try: d_c = safe_llm_call(wc.generate, ctx_str, model_name="NVIDIA", stage="Observability")
+    except Exception as e:
+        logger.warning("Obs Writer C failed: %s", e); d_c = ""
     
     # Refine Loop (up to 3 cycles)
     user_feedback = ""
@@ -402,7 +419,7 @@ def run_observability_stage(project_path, context_data):
             executor.run(final, project_path)
             return True
         elif decision == 'refine':
-            user_feedback = input("💬 Your feedback: ")
+            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
             print("🔄 Re-running review with your feedback...")
         else:
             return False
@@ -430,8 +447,8 @@ def run_debug_stage(project_path, context_data):
         try:
             from src.tools.file_ops import read_file
             error_input = read_file(log_path)
-        except:
-            print("❌ Could not read log file.")
+        except Exception as e:
+            print(f"❌ Could not read log file: {e}")
             return False
     else:
         print("Paste error (type END on a new line when done):")
@@ -451,8 +468,8 @@ def run_debug_stage(project_path, context_data):
     try:
         wa, wb, wc = DebugWriterA(), DebugWriterB(), DebugWriterC()
         reviewer = DebugReviewer()
-    except:
-        print("⚠️  API Keys missing. Using MOCK clients.")
+    except Exception as e:
+        print(f"⚠️  API Keys missing ({e}). Using MOCK clients.")
         from src.llm_clients.mock_client import MockClient
         class MockDebugA:
             def analyze(self, err, context=""): return MockClient("RCA").call(f"root cause analysis: {err[:100]}")
@@ -474,12 +491,15 @@ def run_debug_stage(project_path, context_data):
     
     # Analyze
     print("\n🔍 Analyzing error with 3 specialists...")
-    try: a_rca = wa.analyze(error_input, context=ctx_str)
-    except: a_rca = "Analysis failed."
-    try: a_sec = wb.analyze(error_input, context=ctx_str)
-    except: a_sec = "Analysis failed."
-    try: a_perf = wc.analyze(error_input, context=ctx_str)
-    except: a_perf = "Analysis failed."
+    try: a_rca = safe_llm_call(lambda p: wa.analyze(error_input, context=p), ctx_str, model_name="Gemini", stage="Debug")
+    except Exception as e:
+        logger.warning("Debug Writer A (RCA) failed: %s", e); a_rca = "Analysis failed."
+    try: a_sec = safe_llm_call(lambda p: wb.analyze(error_input, context=p), ctx_str, model_name="Groq", stage="Debug")
+    except Exception as e:
+        logger.warning("Debug Writer B (Security) failed: %s", e); a_sec = "Analysis failed."
+    try: a_perf = safe_llm_call(lambda p: wc.analyze(error_input, context=p), ctx_str, model_name="NVIDIA", stage="Debug")
+    except Exception as e:
+        logger.warning("Debug Writer C (Perf) failed: %s", e); a_perf = "Analysis failed."
     
     # Refine Loop (up to 3 cycles)
     user_feedback = ""
@@ -502,7 +522,7 @@ def run_debug_stage(project_path, context_data):
             executor.run(incident_report, project_path)
             return True
         elif decision == 'refine':
-            user_feedback = input("💬 Your feedback (e.g. 'also check for memory leaks'): ")
+            user_feedback = sanitize_feedback(input("💬 Your feedback (e.g. 'also check for memory leaks'): "))
             print("🔄 Re-running analysis with your feedback...")
         else:
             return False

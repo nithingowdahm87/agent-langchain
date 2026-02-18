@@ -1,11 +1,10 @@
 import os
 import requests
+from src.utils.secrets import get_secret
 
 class NvidiaClient:
     def __init__(self, model: str = "meta/llama-3.1-405b-instruct", temperature: float = 0.1):
-        self.api_key = os.environ.get("NVIDIA_API_KEY")
-        if not self.api_key:
-            raise RuntimeError("NVIDIA_API_KEY environment variable is not set")
+        self.api_key = get_secret("NVIDIA_API_KEY")
         self.model = model
         self.temperature = temperature
         self.base_url = "https://integrate.api.nvidia.com/v1/chat/completions"

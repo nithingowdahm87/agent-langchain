@@ -1,11 +1,10 @@
 import os
 import requests
+from src.utils.secrets import get_secret
 
 class PerplexityClient:
     def __init__(self, model: str = "sonar", temperature: float = 0.1):
-        token = os.environ.get("PPLX_API_KEY")
-        if not token:
-            raise RuntimeError("PPLX_API_KEY environment variable is not set")
+        token = get_secret("PPLX_API_KEY")
         self.token = token
         self.model = model
         self.temperature = temperature

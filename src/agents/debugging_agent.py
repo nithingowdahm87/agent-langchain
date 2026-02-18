@@ -165,7 +165,7 @@ REPORT:
                 report = parts[1].strip()
                 return (report, reasoning)
             return (response, "AI Review Completed")
-        except:
+        except Exception:
             return (analysis_a, "Fallback to Analysis A")
 
 

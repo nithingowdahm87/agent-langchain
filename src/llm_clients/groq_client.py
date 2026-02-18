@@ -1,11 +1,10 @@
 import os
 import requests
+from src.utils.secrets import get_secret
 
 class GroqClient:
     def __init__(self, model: str = "llama-3.3-70b-versatile", temperature: float = 0.1):
-        self.api_key = os.environ.get("GROQ_API_KEY")
-        if not self.api_key:
-            raise RuntimeError("GROQ_API_KEY environment variable is not set")
+        self.api_key = get_secret("GROQ_API_KEY")
         self.model = model
         self.temperature = temperature
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
