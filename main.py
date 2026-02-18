@@ -24,6 +24,8 @@ from src.utils.sanitizer import sanitize_feedback
 from src.utils.logger import get_logger, set_correlation_id, configure_logging
 from src.utils.parallel import run_writers_parallel
 from src.audit.decision_log import AuditLog
+from src.policy.validator import PolicyValidator
+from src.gitops.pr_creator import GitOpsPublisher
 
 logger = get_logger("devops-agent.pipeline")
 
@@ -61,7 +63,8 @@ def human_decision():
         return 'reject'
 
 def stage_decision_loop(stage_name, reviewer, drafts, executor, run_executor_fn,
-                        guidelines_path, audit, det_reviewer=None, det_fn=None):
+                        guidelines_path, audit, det_reviewer=None, det_fn=None,
+                        publisher=None, output_files=None, project_path="", run_id=""):
     """
     Shared refine loop logic across all stages.
     
@@ -75,7 +78,12 @@ def stage_decision_loop(stage_name, reviewer, drafts, executor, run_executor_fn,
         audit: AuditLog instance
         det_reviewer: optional DeterministicReviewer
         det_fn: optional function(reviewer, draft) -> (bool, str) for deterministic checks
+        publisher: optional GitOpsPublisher for PR-based publishing
+        output_files: optional dict mapping {filename: None} — will be filled with content on approve
+        project_path: project path for local fallback
+        run_id: correlation ID for PR metadata
     """
+    policy_validator = PolicyValidator()
     user_feedback = ""
     for i in range(3):
         logger.info("Review cycle %d/3", i + 1, extra={"stage": stage_name})
@@ -95,8 +103,19 @@ def stage_decision_loop(stage_name, reviewer, drafts, executor, run_executor_fn,
         logger.info("AI review starting", extra={"stage": stage_name})
         final, reasoning = reviewer.review_and_merge(drafts[0], drafts[1], drafts[2], validation_report=report)
         
-        print(f"\n🧠 AI Reasoning:\n{reasoning}\n")
-        print(f"📄 Proposed Output:\n{final}\n")
+        print(f"\n\U0001f9e0 AI Reasoning:\n{reasoning}\n")
+        print(f"\U0001f4c4 Proposed Output:\n{final}\n")
+        
+        # Policy Gate
+        passed, violations = policy_validator.validate(final, stage_name)
+        if violations:
+            print(f"\n\U0001f6e1\ufe0f  Policy Check ({len(violations)} finding(s)):")
+            for v in violations:
+                print(f"  \u2022 {v}")
+            if not passed:
+                print("\u26a0\ufe0f  Critical policy violations found. Consider refining.")
+        else:
+            print("\u2705 Policy check passed.")
         
         guidelines_check(reasoning, guidelines_path)
         
@@ -105,25 +124,40 @@ def stage_decision_loop(stage_name, reviewer, drafts, executor, run_executor_fn,
                      user_feedback=user_feedback, cycle=i + 1, drafts_count=sum(1 for d in drafts if d))
         
         if decision == 'approve':
-            run_executor_fn(final)
+            # Publish via GitOps or local
+            if publisher and output_files:
+                files = {fname: final for fname in output_files}
+                result = publisher.publish(
+                    files=files, stage=stage_name, run_id=run_id,
+                    reasoning=reasoning, project_path=project_path,
+                )
+                if result["mode"] == "pr":
+                    print(f"\U0001f680 PR created: {result['url']}")
+                elif result["mode"] == "local":
+                    print(f"\u2705 Written locally: {', '.join(result['paths'])}")
+                else:
+                    # Fallback failed — use executor directly
+                    run_executor_fn(final)
+            else:
+                run_executor_fn(final)
             logger.info("Stage approved and executed", extra={"stage": stage_name, "decision": "approve"})
             return True
         elif decision == 'refine':
-            user_feedback = sanitize_feedback(input("💬 Your feedback: "))
+            user_feedback = sanitize_feedback(input("\U0001f4ac Your feedback: "))
             logger.info("Refine requested", extra={"stage": stage_name, "decision": "refine"})
         else:
             logger.info("Stage rejected", extra={"stage": stage_name, "decision": "reject"})
             return False
     
     logger.warning("Max refine cycles reached", extra={"stage": stage_name})
-    print("⚠️  Max refine cycles reached.")
+    print("\u26a0\ufe0f  Max refine cycles reached.")
     return False
 
 
 # ================================================================
 # STAGE 2: Dockerfile
 # ================================================================
-def run_docker_stage(project_path, context_data, audit):
+def run_docker_stage(project_path, context_data, audit, publisher=None, run_id=""):
     print_header("Stage 2: Docker Infrastructure Generation")
     context_str = json.dumps(context_data, indent=2)
     
@@ -163,13 +197,15 @@ def run_docker_stage(project_path, context_data, audit):
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
         guidelines_path="configs/guidelines/docker-guidelines.md", audit=audit,
         det_reviewer=det_reviewer, det_fn=lambda r, d: r.review_dockerfile(d),
+        publisher=publisher, output_files={"Dockerfile": None},
+        project_path=project_path, run_id=run_id,
     )
 
 
 # ================================================================
 # STAGE 3: Docker Compose
 # ================================================================
-def run_compose_stage(project_path, context_data, audit):
+def run_compose_stage(project_path, context_data, audit, publisher=None, run_id=""):
     print_header("Stage 3: Docker Compose Generation")
     ctx_str = json.dumps(context_data, indent=2)
     
@@ -210,13 +246,15 @@ def run_compose_stage(project_path, context_data, audit):
         stage_name="Compose", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
         guidelines_path="configs/guidelines/docker-guidelines.md", audit=audit,
+        publisher=publisher, output_files={"docker-compose.yml": None},
+        project_path=project_path, run_id=run_id,
     )
 
 
 # ================================================================
 # STAGE 4: Kubernetes Manifests
 # ================================================================
-def run_k8s_stage(project_path, context_data, audit):
+def run_k8s_stage(project_path, context_data, audit, publisher=None, run_id=""):
     print_header("Stage 4: Kubernetes Manifests")
     ctx_str = json.dumps(context_data, indent=2)
     service_name = context_data.get('project_name', 'myapp')
@@ -258,13 +296,15 @@ def run_k8s_stage(project_path, context_data, audit):
         executor=executor, run_executor_fn=lambda final: executor.run(final, os.path.join(project_path, "manifest.yaml")),
         guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
         det_reviewer=det_reviewer, det_fn=lambda r, d: r.review_k8s(d),
+        publisher=publisher, output_files={"manifest.yaml": None},
+        project_path=project_path, run_id=run_id,
     )
 
 
 # ================================================================
 # STAGE 5: CI/CD (GitHub Actions)
 # ================================================================
-def run_cicd_stage(project_path, context_data, audit):
+def run_cicd_stage(project_path, context_data, audit, publisher=None, run_id=""):
     print_header("Stage 5: CI/CD Generation (GitHub Actions)")
     ctx_str = json.dumps(context_data, indent=2)
     
@@ -299,13 +339,15 @@ def run_cicd_stage(project_path, context_data, audit):
         stage_name="CI/CD", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
         guidelines_path="configs/guidelines/ci-guidelines.md", audit=audit,
+        publisher=publisher, output_files={".github/workflows/main.yml": None},
+        project_path=project_path, run_id=run_id,
     )
 
 
 # ================================================================
 # STAGE 6: Observability (Helm)
 # ================================================================
-def run_observability_stage(project_path, context_data, audit):
+def run_observability_stage(project_path, context_data, audit, publisher=None, run_id=""):
     print_header("Stage 6: Observability (Helm Chart)")
     ctx_str = json.dumps(context_data, indent=2)
     
@@ -341,13 +383,15 @@ def run_observability_stage(project_path, context_data, audit):
         stage_name="Observability", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
         guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
+        publisher=publisher, output_files={"helm/monitoring/Chart.yaml": None},
+        project_path=project_path, run_id=run_id,
     )
 
 
 # ================================================================
 # STAGE 7: Debugging / Troubleshooting
 # ================================================================
-def run_debug_stage(project_path, context_data, audit):
+def run_debug_stage(project_path, context_data, audit, publisher=None, run_id=""):
     print_header("Stage 7: Debugging & Troubleshooting")
     ctx_str = json.dumps(context_data, indent=2)
     
@@ -365,7 +409,7 @@ def run_debug_stage(project_path, context_data, audit):
             error_input = read_file(log_path)
         except Exception as e:
             logger.error("Could not read log file: %s", e)
-            print(f"❌ Could not read log file: {e}")
+            print(f"\u274c Could not read log file: {e}")
             return False
     else:
         print("Paste error (type END on a new line when done):")
@@ -378,7 +422,7 @@ def run_debug_stage(project_path, context_data, audit):
         error_input = '\n'.join(lines)
     
     if not error_input.strip():
-        print("❌ No input provided.")
+        print("\u274c No input provided.")
         return False
     
     # Initialize
@@ -408,7 +452,7 @@ def run_debug_stage(project_path, context_data, audit):
     
     # Analyze in parallel
     logger.info("Analyzing with 3 specialists in parallel", extra={"stage": "Debug"})
-    print("\n🔍 Analyzing error with 3 specialists in parallel...")
+    print("\n\U0001f50d Analyzing error with 3 specialists in parallel...")
     drafts = run_writers_parallel(
         writers=[(wa, "RCA-Gemini"), (wb, "Security-Groq"), (wc, "Perf-NVIDIA")],
         generate_fn=lambda w, ctx: w.analyze(error_input, context=ctx),
@@ -418,10 +462,14 @@ def run_debug_stage(project_path, context_data, audit):
     # Replace empty strings with failure message for debug
     drafts = [d if d else "Analysis failed." for d in drafts]
     
+    import time as _time
+    timestamp = _time.strftime("%Y%m%d_%H%M%S")
     return stage_decision_loop(
         stage_name="Debug", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
         guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
+        publisher=publisher, output_files={f"debug_reports/incident_{timestamp}.md": None},
+        project_path=project_path, run_id=run_id,
     )
 
 
@@ -432,20 +480,21 @@ def main():
     configure_logging(json_mode=os.environ.get("LOG_JSON", "").lower() == "true")
     run_id = set_correlation_id()
     audit = AuditLog(run_id=run_id)
+    publisher = GitOpsPublisher()
     
-    print_header(f"DevOps AI Agent Pipeline v4.0 [run:{run_id}]")
-    logger.info("Pipeline started", extra={"stage": "init"})
+    print_header(f"DevOps AI Agent Pipeline v5.0 [run:{run_id}]")
+    logger.info("Pipeline started | gitops_mode=%s", publisher.mode, extra={"stage": "init"})
     
     project_path = input("Enter project path: ").strip()
     if not os.path.exists(project_path):
-        print("❌ Path does not exist")
+        print("\u274c Path does not exist")
         return
 
     # STEP 1: ANALYSIS
     print_header("Stage 1: Code Analysis & Caching")
     context = load_or_run_analysis(project_path)
     logger.info("Context loaded: %s app", context['language'], extra={"stage": "Analysis"})
-    print(f"✅ Context Loaded: {context['language']} app, Ports: {context.get('ports')}")
+    print(f"\u2705 Context Loaded: {context['language']} app, Ports: {context.get('ports')}")
     
     while True:
         print("\n--- Pipeline Menu ---")
@@ -460,25 +509,25 @@ def main():
         choice = input("Run Stage: ")
         
         if choice == '2':
-            run_docker_stage(project_path, context, audit)
+            run_docker_stage(project_path, context, audit, publisher, run_id)
         elif choice == '3':
-            run_compose_stage(project_path, context, audit)
+            run_compose_stage(project_path, context, audit, publisher, run_id)
         elif choice == '4':
-            run_k8s_stage(project_path, context, audit)
+            run_k8s_stage(project_path, context, audit, publisher, run_id)
         elif choice == '5':
-            run_cicd_stage(project_path, context, audit)
+            run_cicd_stage(project_path, context, audit, publisher, run_id)
         elif choice == '6':
-            run_observability_stage(project_path, context, audit)
+            run_observability_stage(project_path, context, audit, publisher, run_id)
         elif choice == '7':
-            run_debug_stage(project_path, context, audit)
+            run_debug_stage(project_path, context, audit, publisher, run_id)
         elif choice == '0':
             break
         else:
-            print("⏳ Not implemented yet.")
+            print("\u23f3 Not implemented yet.")
     
     # Save audit trail on exit
     audit_path = audit.save()
-    print(f"\n📝 Audit log saved: {audit_path}")
+    print(f"\n\U0001f4dd Audit log saved: {audit_path}")
     print(audit.summary())
     logger.info("Pipeline completed", extra={"stage": "exit"})
 
