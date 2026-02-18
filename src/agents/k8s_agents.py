@@ -23,6 +23,7 @@ class K8sWriterA:
         {guidelines}
         Write Kubernetes manifests (Deployment + Service) for this service.
         - Use data from PROJECT CONTEXT (ports, env vars).
+        - [NEW] Include a NetworkPolicy to isolate this service (default deny ingress, allow specific/necessary ports).
         Return ONLY YAML (one or more documents), no explanation.
         """.strip()
         return self.llm.call(prompt)
@@ -46,8 +47,10 @@ class K8sWriterB:
         Guidelines:
         {guidelines}
         Write alternative manifests with:
-        - Strong Pod security.
+        - Strong Pod security context (runAsNonRoot, readOnlyRootFilesystem).
         - Explicit requests and limits.
+        - [NEW] ServiceAccount, Role, and RoleBinding (Least Privilege).
+        - AutomountServiceAccountToken: false (unless needed).
         - Use context for accurate ports.
         Return ONLY YAML.
         """.strip()
@@ -72,9 +75,12 @@ class K8sWriterC:
         Guidelines:
         {guidelines}
         Write alternative manifests with:
+        Write alternative manifests with:
         - Horizontal Pod Autoscaling (HPA).
         - Readiness and Liveness probes.
         - Pod Disruption Budgets.
+        - [NEW] Use StatefulSet (if it's a DB) or Deployment.
+        - [NEW] Include a Job for initialization (e.g. DB migrations) if scripts are detected.
         Return ONLY YAML.
         """.strip()
         return self.llm.call(prompt)
