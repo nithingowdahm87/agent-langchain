@@ -182,7 +182,7 @@ def run_docker_stage(project_path, context: ProjectContext, audit, publisher=Non
         logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         class MockWriter:
-            def generate(self, p, context=""): return MockClient("MockDocker").call("review")
+            def generate(self, context=""): return MockClient("MockDocker").call("draft dockerfile")
         wa, wb, wc = MockWriter(), MockWriter(), MockWriter()
         class MockDockerReviewer:
             def review_and_merge(self, a, b, c, validation_report=""):
@@ -280,7 +280,7 @@ def run_k8s_stage(project_path, context: ProjectContext, audit, publisher=None, 
         logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         class MockK8sWriter:
-            def generate(self, name, context=""): return MockClient("MockK8s").call("kubernetes")
+            def generate(self, context=""): return MockClient("MockK8s").call("kubernetes")
         wa, wb, wc = MockK8sWriter(), MockK8sWriter(), MockK8sWriter()
         class MockK8sReviewer:
             def review_and_merge(self, a, b, c, validation_report=""):
@@ -380,8 +380,8 @@ def run_observability_stage(project_path, context: ProjectContext, audit, publis
         logger.warning("API Keys missing, using mocks: %s", e)
         from src.llm_clients.mock_client import MockClient
         class MockObsWriter:
-            def generate(self, ctx): return MockClient("MockObs").call("helm chart")
-            def generate_dashboard(self, ctx): return MockClient("MockObs").call("grafana dashboard json")
+            def generate(self, context=""): return MockClient("MockObs").call("helm chart")
+            def generate_dashboard(self, context=""): return MockClient("MockObs").call("grafana dashboard json")
         wa, wb, wc = MockObsWriter(), MockObsWriter(), MockObsWriter()
         class MockObsReviewer:
             def review_and_merge(self, a, b, c, validation_report=""):
@@ -541,6 +541,7 @@ def run_cost_stage(project_path, context: ProjectContext, run_id="") -> StageRes
         return StageResult(stage_name="Cost", status=Decision.REJECT, reasoning=f"Read error: {e}")
         
     print("Estimating monthly cloud costs based on manifests...")
+    try:
         estimator = CostEstimator()
         report = estimator.estimate(manifest_content)
         
@@ -639,6 +640,7 @@ def main():
         print("5. [CI/CD]         Generate GitHub Actions")
         print("6. [Observability] Generate Helm/Monitoring")
         print("7. [Debug]         Troubleshoot Errors")
+        print("8. [Cost]          Cloud Cost Estimation")
         print("0. Exit")
         
         choice = input("Run Stage: ")
