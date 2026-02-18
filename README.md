@@ -1,4 +1,4 @@
-# 🚀 DevOps AI Agent Pipeline v10.0
+# 🚀 DevOps AI Agent Pipeline v12.0
 
 > A self-correcting, multi-agent DevOps platform that generates production-grade infrastructure files for any codebase — powered by 4 LLM providers working in parallel, with built-in policy enforcement, audit trails, and GitOps publishing.
 
@@ -261,6 +261,20 @@ GITHUB_BASE_BRANCH=main   # optional, defaults to main
 | **Auto-Fix** | `SelfHealer` agent applies patches to broken code |
 | **Integration** | Seamlessly available in `Debug` stage after RCA |
 
+### Phase 11: Output Organization (v11.0)
+
+| Feature | Details |
+|---------|---------|
+| **Clean Structures** | Groups artifacts into `k8s/` and `cost/` folders |
+| **Context Aware** | Keeps Dockerfiles in build roots for valid contexts |
+
+### Phase 12: Enhanced Analysis (v12.0)
+
+| Feature | Details |
+|---------|---------|
+| **Smart Detection** | Identifies microservices, cloud SDKs, and existing DevOps files |
+| **Interactive** | Reports findings at startup & asks to Keep or Overwrite |
+
 ---
 
 ## 📁 Project Structure
@@ -446,6 +460,8 @@ chmod +x bin/kubeval
 | v8.0 | **Pro Prompts** | Externalized Prompt Library + Role Personas |
 | v9.0 | **FinOps** | Cloud Cost Estimation Agent |
 | v10.0 | **Self-Healing** | Auto-Fix capabilities in Debug Stage |
+| v11.0 | **Organized** | Clean output structure (`k8s/`, `cost/`) |
+| v12.0 | **Smart Scan** | Enhanced architectural detection & existing file awareness |
 
 ---
 

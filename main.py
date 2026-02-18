@@ -632,7 +632,7 @@ def main():
     audit = AuditLog(run_id=run_id)
     publisher = GitOpsPublisher()
     
-    print_header(f"DevOps AI Agent Pipeline v10.0 [run:{run_id}]")
+    print_header(f"DevOps AI Agent Pipeline v12.0 [run:{run_id}]")
     logger.info("Pipeline started | gitops_mode=%s", publisher.mode, extra={"stage": "init"})
     
     project_path = input("Enter project path: ").strip()
