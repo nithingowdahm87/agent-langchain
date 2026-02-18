@@ -2,34 +2,22 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-*.egg-info/
-dist/
-build/
-*.egg
-
-# Virtual Environment
 venv/
 .env
+.pytest_cache/
+*.log
+.coverage
+htmlcov/
+dist/
+build/
 
-# IDE
+# IDEs
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # OS
 .DS_Store
-Thumbs.db
 
-# Project-specific
-.devops_context.json
-debug_reports/
+# Agent Artifacts
 audit_logs/
-test_github.py
-test_github_configs.py
-run_agent.sh
-r.sh
-verification.log
-test_*.py
-list_gemini_models.py
+.devops_context.json

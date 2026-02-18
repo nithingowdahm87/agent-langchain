@@ -1,6 +1,7 @@
 import os
 import requests
 from src.utils.secrets import get_secret
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 class NvidiaClient:
     def __init__(self, model: str = "meta/llama-3.1-405b-instruct", temperature: float = 0.1):
@@ -9,6 +10,7 @@ class NvidiaClient:
         self.temperature = temperature
         self.base_url = "https://integrate.api.nvidia.com/v1/chat/completions"
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def call(self, prompt: str) -> str:
         headers = {
             "Authorization": f"Bearer {self.api_key}",

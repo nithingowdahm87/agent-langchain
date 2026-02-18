@@ -51,28 +51,56 @@ class CodeAnalysisAgent:
         return context
 
     def _detect_node(self, analysis: dict):
-        pkg_path = os.path.join(self.project_path, "package.json")
-        if os.path.exists(pkg_path):
-            analysis["language"] = "javascript/node"
-            try:
-                data = json.loads(read_file(pkg_path))
-                analysis["dependencies"] = list(data.get("dependencies", {}).keys())
-                analysis["scripts"] = data.get("scripts", {})
-                if "express" in analysis["dependencies"]:
-                    analysis["frameworks"].append("express")
-                if "react" in analysis["dependencies"]:
-                    analysis["frameworks"].append("react")
-            except Exception: pass
+        # Scan recursively
+        for root, dirs, files in os.walk(self.project_path):
+            if "node_modules" in dirs: 
+                dirs.remove("node_modules")
+            
+            if "package.json" in files:
+                analysis["language"] = "javascript/node" # At least one node app found
+                pkg_path = os.path.join(root, "package.json")
+                try:
+                    data = json.loads(read_file(pkg_path))
+                    deps = list(data.get("dependencies", {}).keys())
+                    analysis["dependencies"].extend(deps)
+                    
+                    # Merge scripts (prefix with folder name to avoid collision?)
+                    # For now just flat merge, last wins or maybe ignore scripts for deep files
+                    if root == self.project_path:
+                        analysis["scripts"] = data.get("scripts", {})
+                        
+                    if "express" in deps:
+                        analysis["frameworks"].append("express")
+                    if "react" in deps:
+                        analysis["frameworks"].append("react")
+                except Exception: pass
+        
+        # Deduplicate
+        analysis["dependencies"] = list(set(analysis["dependencies"]))
+        analysis["frameworks"] = list(set(analysis["frameworks"]))
 
     def _detect_python(self, analysis: dict):
-        req_path = os.path.join(self.project_path, "requirements.txt")
-        if os.path.exists(req_path):
-            analysis["language"] = "python"
-            content = read_file(req_path)
-            analysis["dependencies"] = [line.split('==')[0] for line in content.splitlines() if line]
-            if "flask" in content.lower(): analysis["frameworks"].append("flask")
-            if "django" in content.lower(): analysis["frameworks"].append("django")
-            if "fastapi" in content.lower(): analysis["frameworks"].append("fastapi")
+        for root, dirs, files in os.walk(self.project_path):
+            if "venv" in dirs: dirs.remove("venv")
+            if "__pycache__" in dirs: dirs.remove("__pycache__")
+            
+            if "requirements.txt" in files:
+                analysis["language"] = "python"
+                req_path = os.path.join(root, "requirements.txt")
+                try:
+                    content = read_file(req_path)
+                    deps = [line.split('==')[0].split('>=')[0].strip() for line in content.splitlines() if line and not line.startswith("#")]
+                    analysis["dependencies"].extend(deps)
+                    
+                    content_lower = content.lower()
+                    if "flask" in content_lower: analysis["frameworks"].append("flask")
+                    if "django" in content_lower: analysis["frameworks"].append("django")
+                    if "fastapi" in content_lower: analysis["frameworks"].append("fastapi")
+                except Exception: pass
+                
+        # Deduplicate
+        analysis["dependencies"] = list(set(analysis["dependencies"]))
+        analysis["frameworks"] = list(set(analysis["frameworks"]))
 
     def _detect_ports(self, analysis: dict):
         # Naive scan for common port patterns

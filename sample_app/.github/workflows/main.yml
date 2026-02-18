@@ -1,0 +1,123 @@
+# .github/workflows/main.yml
+
+name: Secure CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  id-token: write
+  packages: write
+  pages: write
+  repository-projects: write
+  security-events: write
+  statuses: write
+
+jobs:
+  secure-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Compile
+      - name: Compile
+        run: |
+          # Verify syntax/compilation per service independently
+          node --check
+        # Use specific version tags for all actions
+        uses: actions/checkout@v4
+
+      # Step 2: GitLeaks Scan
+      - name: GitLeaks Scan
+        uses: zricethezav/gitleaks@v8
+        with:
+          # Full history scan (fetch-depth: 0) for hardcoded secrets
+          fetch-depth: 0
+        needs: compile
+
+      # Step 3: Trivy FS Scan
+      - name: Trivy FS Scan
+        uses: aquasecurity/trivy-action@v0.24.0
+        with:
+          # Scan source & dependencies for CVEs (CRITICAL, HIGH)
+          format: sarif
+          severity: CRITICAL,HIGH
+        needs: gitleaks
+
+      # Step 4: SonarQube SAST
+      - name: SonarQube SAST
+        uses: sonarcloud/sonarcloud-github-action@v2
+        with:
+          # Parallel analysis per microservice (individual SONAR_TOKEN)
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
+          sonar-organization: ${{ secrets.SONAR_ORG }}
+          sonar-project-key: ${{ secrets.SONAR_PROJECT_KEY }}
+          sonar-branch: main
+        needs: trivy-fs
+
+      # Step 5: OWASP ZAP DAST
+      - name: OWASP ZAP DAST
+        uses: zaproxy/action-zap@v0.2.1
+        with:
+          # Dynamic scan on staging URL/OpenAPI (parallel per service)
+          zap-url: https://staging.example.com
+          zap-api-key: ${{ secrets.ZAP_API_KEY }}
+        needs: sonar
+
+      # Step 6: Docker Build
+      - name: Docker Build
+        uses: docker/build-push-action@v4
+        with:
+          # Build & Push immutable tags (sha-XXXXXX) using Buildx & GHA cache
+          context: .
+          push: true
+          tags: ${{ github.sha }}
+          cache: true
+        needs: [sonar, owasp-zap]
+
+      # Step 7: Trivy Image Scan
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@v0.24.0
+        with:
+          # Scan the *built* image for OS/package vulnerabilities
+          format: sarif
+          severity: CRITICAL,HIGH
+          image: ${{ github.sha }}
+        needs: docker-build
+
+      # Step 8: Notify
+      - name: Notify
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          # Final status notification (Slack/Email) with rich formatting
+          slack-channel: ${{ secrets.SLACK_CHANNEL }}
+          slack-token: ${{ secrets.SLACK_TOKEN }}
+          message: |
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.branch }}
+            Commit SHA: ${{ github.sha }}
+            Job Status: ${{ job.status }}
+        # Use dawidd6/action-send-mail@v6 for Email
+        # uses: dawidd6/action-send-mail@v6
+        # with:
+        #   mail-server: ${{ secrets.MAIL_SERVER }}
+        #   mail-username: ${{ secrets.MAIL_USERNAME }}
+        #   mail-password: ${{ secrets.MAIL_PASSWORD }}
+        #   mail-to: ${{ secrets.MAIL_TO }}
+        #   mail-subject: ${{ github.repository }} - ${{ job.status }}
+        #   mail-body: |
+        #     Repository: ${{ github.repository }}
+        #     Branch: ${{ github.branch }}
+        #     Commit SHA: ${{ github.sha }}
+        #     Job Status: ${{ job.status }}
+
+# ArgoCD Application annotations
+# image-list: sha-XXXXXX
+# update-strategy: canary
+# sync-policy: automated
+# self-heal: enabled
+# history-size: 10

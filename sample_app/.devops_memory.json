@@ -1,0 +1,172 @@
+{
+  "history": [
+    {
+      "timestamp": "2026-02-18T20:53:59.983189",
+      "stage": "dockerfile",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "Ensure MONGO_URI uses TLS and authentication."
+    },
+    {
+      "timestamp": "2026-02-18T20:54:00.035432",
+      "stage": "kubernetes",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "Ensure MONGO_URI uses TLS and authentication."
+    },
+    {
+      "timestamp": "2026-02-18T20:54:00.044173",
+      "stage": "cicd",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "sonar.projectKey=backend\nsonar.sources=src\nsonar.exclusions=node_modules/**,tests/**"
+    },
+    {
+      "timestamp": "2026-02-18T20:54:59.865274",
+      "stage": "dockerfile",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "Ensure MONGO_URI uses TLS and authentication."
+    },
+    {
+      "timestamp": "2026-02-18T20:54:59.870836",
+      "stage": "kubernetes",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "Ensure MONGO_URI uses TLS and authentication."
+    },
+    {
+      "timestamp": "2026-02-18T20:54:59.875400",
+      "stage": "cicd",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "FILENAME: backend/sonar-project.properties\n```properties\nsonar.projectKey=backend\nsonar.sources=src\nsonar.exclusions=node_modules/**,tests/**\n```\n\nFILENAME: frontend/sonar-project.properties\n```proper..."
+    },
+    {
+      "timestamp": "2026-02-18T20:59:13.421879",
+      "stage": "dockerfile",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD [\"npm\", \"start\"]"
+    },
+    {
+      "timestamp": "2026-02-18T20:59:13.429617",
+      "stage": "kubernetes",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: myapp\n  template:\n    metadata:\n      labels:\n        app: myapp\n    spec:\n    ..."
+    },
+    {
+      "timestamp": "2026-02-18T20:59:13.433644",
+      "stage": "cicd",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "FILENAME: backend/sonar-project.properties\n```properties\nsonar.projectKey=backend\nsonar.sources=src\nsonar.exclusions=node_modules/**,tests/**\n```\n\nFILENAME: frontend/sonar-project.properties\n```proper..."
+    },
+    {
+      "timestamp": "2026-02-18T21:00:08.634616",
+      "stage": "dockerfile",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD [\"npm\", \"start\"]"
+    },
+    {
+      "timestamp": "2026-02-18T21:00:08.639101",
+      "stage": "kubernetes",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: myapp\n  template:\n    metadata:\n      labels:\n        app: myapp\n    spec:\n    ..."
+    },
+    {
+      "timestamp": "2026-02-18T21:00:08.644558",
+      "stage": "cicd",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD [\"npm\", \"start\"]"
+    },
+    {
+      "timestamp": "2026-02-18T21:00:53.198356",
+      "stage": "dockerfile",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD [\"npm\", \"start\"]"
+    },
+    {
+      "timestamp": "2026-02-18T21:00:53.202915",
+      "stage": "kubernetes",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: myapp\n  template:\n    metadata:\n      labels:\n        app: myapp\n    spec:\n    ..."
+    },
+    {
+      "timestamp": "2026-02-18T21:00:53.208321",
+      "stage": "cicd",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "name: CI/CD Pipeline\non: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n      - name: Build Docker\n        run: docker build ."
+    },
+    {
+      "timestamp": "2026-02-18T21:07:27.060267",
+      "stage": "dockerfile",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD [\"npm\", \"start\"]"
+    },
+    {
+      "timestamp": "2026-02-18T21:07:27.067111",
+      "stage": "kubernetes",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: myapp\n  template:\n    metadata:\n      labels:\n        app: myapp\n    spec:\n    ..."
+    },
+    {
+      "timestamp": "2026-02-18T21:07:27.112644",
+      "stage": "cicd",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "name: CI/CD \u2014 DevSecOps Pipeline\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n  security-events: write\n\nenv:\n  IMAGE_TAG: ${{ github.sha }}\n\njo..."
+    },
+    {
+      "timestamp": "2026-02-18T21:20:44.872859",
+      "stage": "dockerfile",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD [\"npm\", \"start\"]"
+    },
+    {
+      "timestamp": "2026-02-18T21:20:44.886533",
+      "stage": "kubernetes",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: myapp\n  template:\n    metadata:\n      labels:\n        app: myapp\n    spec:\n    ..."
+    },
+    {
+      "timestamp": "2026-02-18T21:20:44.897736",
+      "stage": "cicd",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "name: CI/CD \u2014 DevSecOps Pipeline\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n  security-events: write\n\nenv:\n  IMAGE_TAG: ${{ github.sha }}\n\njo..."
+    },
+    {
+      "timestamp": "2026-02-18T21:23:24.796665",
+      "stage": "dockerfile",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "# syntax=docker/dockerfile:1.4\n\n# Stage 1: Builder\nFROM python:3.11-slim AS builder\n\n# Set working directory\nWORKDIR /app\n\n# Set environment variables\nENV PYTHONDONTWRITEBYTECODE 1\nENV PYTHONUNBUFFERE..."
+    },
+    {
+      "timestamp": "2026-02-18T21:23:47.450823",
+      "stage": "kubernetes",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "# Deployment\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: example-deployment\n  labels:\n    app: example\n    version: v1\n    environment: production\n    team: devops\nspec:\n  replicas: 2\n  sel..."
+    },
+    {
+      "timestamp": "2026-02-18T21:24:27.994451",
+      "stage": "cicd",
+      "decision": "APPROVED",
+      "reason": "Low confidence: Requires careful review.",
+      "content_snippet": "# .github/workflows/main.yml\n\nname: Secure CI/CD Pipeline\n\non:\n  push:\n    branches:\n      - main\n\npermissions:\n  contents: read\n  actions: read\n  checks: write\n  id-token: write\n  packages: write\n  p..."
+    }
+  ]
+}

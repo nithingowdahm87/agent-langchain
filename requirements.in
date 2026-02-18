@@ -17,6 +17,9 @@ pyyaml
 # Schema validation
 pydantic>=2.0
 
+# Retries
+tenacity
+
 # ─── Optional: Production backends (uncomment as needed) ────────
 # boto3              # AWS Secrets Manager
 # hvac               # HashiCorp Vault

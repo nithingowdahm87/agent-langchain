@@ -138,17 +138,10 @@ python3 main.py
 
 ```
 ============================================================
-🚀 DevOps AI Agent Pipeline v5.0 [run:a1b2c3d4]
+🚀 DevOps AI Agent Pipeline v12.0
 ============================================================
 Enter project path: /path/to/your/app
 
---- Pipeline Menu ---
-2. [Docker]        Generate Dockerfile
-3. [Compose]       Generate Docker Compose
-4. [K8s]           Generate Kubernetes Manifests
-5. [CI/CD]         Generate GitHub Actions
-6. [Observability] Generate Helm/Monitoring/Dashboards
-7. [Debug]         Troubleshoot Errors
 8. [Cost]          Cloud Cost Estimation
 0. Exit
 Run Stage: _
@@ -168,7 +161,11 @@ Scans your codebase and creates `.devops_context.json` — the shared brain read
 
 ### Stage 2: Dockerfile
 
-3 writers generate competing Dockerfiles → AI reviewer merges the best → Hadolint validates → Policy checks (no `:latest`, `USER` required, `HEALTHCHECK`) → You approve.
+3 writers generate competing Dockerfiles → AI reviewer merges the best → Hadolint validates
+3- **🧠 V2 Decision Engine**: Deterministic architecture planning, multi-model consensus, and auto-repair loops.
+- **🛡️ Security-First**: Generated artifacts (Dockerfiles, K8s manifests) adhere to strict security baselines (non-root, pinned versions).
+- **🔧 Self-Healing**: Automated error detection and retry logic for LLM calls and validation failures.
+- **🏗️ Microservices Support**: Automatically detects and handles complex microservice architectures. → Policy checks (no `:latest`, `USER` required, `HEALTHCHECK`) → You approve.
 
 ### Stage 3: Docker Compose
 
@@ -461,7 +458,7 @@ chmod +x bin/kubeval
 | v9.0 | **FinOps** | Cloud Cost Estimation Agent |
 | v10.0 | **Self-Healing** | Auto-Fix capabilities in Debug Stage |
 | v11.0 | **Organized** | Clean output structure (`k8s/`, `cost/`) |
-| v12.0 | **Smart Scan** | Enhanced architectural detection & existing file awareness |
+| v12.0 | **Auto-Pilot** | V2 Decision Engine, Real/Mock Mode switching, 8-stage DevSecOps Pipeline |
 
 ---
 

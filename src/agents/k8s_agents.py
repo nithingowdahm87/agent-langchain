@@ -118,7 +118,7 @@ class K8sReviewer:
         # Get AI review
         try:
             response = self.llm.call(review_prompt)
-            
+
             # Parse response
             if "YAML:" in response:
                 parts = response.split("YAML:", 1)
@@ -128,12 +128,12 @@ class K8sReviewer:
                 # Fallback if format not followed
                 reasoning = "AI review completed"
                 yaml_content = response
-            
+
             # Clean up any markdown artifacts
             yaml_content = yaml_content.replace("```yaml", "").replace("```", "").strip()
-            
+
             return (yaml_content + "\n", reasoning)
-            
+
         except Exception as e:
             print(f"Warning: AI review failed ({e}), falling back to longest valid output")
             # Fallback to deterministic logic if AI fails

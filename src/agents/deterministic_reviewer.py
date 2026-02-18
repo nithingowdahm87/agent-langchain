@@ -53,25 +53,30 @@ class DeterministicReviewer:
 
     def review_k8s(self, content: str) -> Tuple[bool, str]:
         """
-        Runs kubeval on Kubernetes manifest content.
+        Runs kubeconform on Kubernetes manifest content.
         Returns: (is_valid, log_message)
         """
-        if not os.path.exists(self.kubeval_path):
-            return True, "⚠️ Kubeval binary not found. Skipping validation."
+        # Update path to kubeconform
+        self.kubeconform_path = os.path.join(self.base_dir, "bin", "kubeconform")
+        
+        if not os.path.exists(self.kubeconform_path):
+            return True, "⚠️ Kubeconform binary not found. Skipping validation."
 
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".yaml") as tmp:
             tmp.write(content)
             tmp_path = tmp.name
 
         try:
-            # Run kubeval
-            ok, out = self.run_cmd([self.kubeval_path, tmp_path])
+            # Run kubeconform -strict -summary
+            # -kubernetes-version can be added if we know the version context
+            cmd = [self.kubeconform_path, "-strict", "-summary", tmp_path]
+            ok, out = self.run_cmd(cmd)
             
             if ok:
-                return True, "✅ Deterministic Validation: Valid Kubernetes manifests (Kubeval passed)."
+                return True, "✅ Deterministic Validation: Valid Kubernetes manifests (Kubeconform passed)."
             else:
                 clean_out = out.replace(tmp_path, "manifest.yaml")
-                return False, f"⚠️ Deterministic Validation Errors (Kubeval):\n{clean_out}"
+                return False, f"⚠️ Deterministic Validation Errors (Kubeconform):\n{clean_out}"
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

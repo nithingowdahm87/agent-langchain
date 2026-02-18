@@ -3,6 +3,10 @@ import sys
 import json
 import time
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add src to python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -11,10 +15,11 @@ from src.agents.code_analysis_agent import CodeAnalysisAgent
 from src.agents.docker_agents import DockerWriterA, DockerWriterB, DockerWriterC, DockerReviewer, DockerExecutor
 from src.agents.k8s_agents import K8sWriterA, K8sWriterB, K8sWriterC, K8sReviewer, K8sExecutor
 from src.agents.deterministic_reviewer import DeterministicReviewer
+from src.decision_engine.orchestrator import V2Orchestrator
 from src.agents.guidelines_compliance_agent import GuidelinesComplianceAgent
 from src.agents.docker_compose_agent import DockerComposeWriter, ComposeReviewer, DockerComposeExecutor
 from src.agents.cicd_agent import CIWriterA, CIWriterB, CIWriterC, CIReviewer, CIExecutor
-from src.agents.observability_agent import ObservabilityWriterA, ObservabilityWriterB, ObservabilityWriterC, ObservabilityReviewer, ObservabilityExecutor
+from src.agents.cicd_agent import CIWriterA, CIWriterB, CIWriterC, CIReviewer, CIExecutor
 from src.agents.cost_agent import CostEstimator, CostExecutor
 from src.agents.debugging_agent import DebugWriterA, DebugWriterB, DebugWriterC, DebugReviewer, DebugExecutor
 from src.llm_clients.gemini_client import GeminiClient
@@ -28,6 +33,7 @@ from src.audit.decision_log import AuditLog
 from src.policy.validator import PolicyValidator
 from src.gitops.pr_creator import GitOpsPublisher
 from src.schemas import ProjectContext, StageResult, Decision, Severity, PolicyViolation
+from src.decision_engine.generator.llm_generator import LLMGenerator # For manual scan hack
 
 logger = get_logger("devops-agent.pipeline")
 
@@ -39,20 +45,7 @@ def print_header(title):
     print(f"🚀 {title}")
     print("="*60)
 
-def load_or_run_analysis(project_path) -> ProjectContext:
-    agent = CodeAnalysisAgent(project_path)
-    context = agent.get_cached_analysis()
-    
-    if context.architecture:
-        print(f"🏗️  Detected Architecture: {', '.join(context.architecture)}")
-        
-    if context.existing_files:
-        print("\n📂 Existing DevOps Files Found:")
-        for type_, path in context.existing_files.items():
-            print(f"  - {type_}: {path}")
-        print("\n💡 Tip: The agent will generate new files. You can choose to overwrite or keep existing ones during review.")
-        
-    return context
+from src.utils.analysis_utils import load_or_run_analysis
 
 def guidelines_check(reasoning, guidelines_path):
     """Run GuidelinesComplianceAgent and print results."""
@@ -67,13 +60,17 @@ def guidelines_check(reasoning, guidelines_path):
 
 def human_decision() -> Decision:
     """Standard 3-option human decision gate."""
-    choice = input("\n✅ Approve (y) / 🔄 Refine (r) / ❌ Reject (n): ").strip().lower()
-    if choice == 'y':
-        return Decision.APPROVE
-    elif choice == 'r':
-        return Decision.REFINE
-    else:
-        return Decision.REJECT
+    while True:
+        choice = input("\n✅ Approve (y) / 🔄 Refine (r) / ❌ Reject (n): ").strip().lower()
+        
+        if choice in ['y', 'yes']:
+            return Decision.APPROVE
+        elif choice in ['r', 'refine']:
+            return Decision.REFINE
+        elif choice in ['n', 'no', 'reject']:
+            return Decision.REJECT
+        
+        print("Invalid choice. Please enter 'y', 'r', or 'n'.")
 
 def stage_decision_loop(stage_name, reviewer, drafts, executor, run_executor_fn,
                         guidelines_path, audit, det_reviewer=None, det_fn=None,
@@ -368,62 +365,7 @@ def run_cicd_stage(project_path, context: ProjectContext, audit, publisher=None,
     )
 
 
-# ================================================================
-# STAGE 6: Observability (Helm)
-# ================================================================
-def run_observability_stage(project_path, context: ProjectContext, audit, publisher=None, run_id="") -> StageResult:
-    print_header("Stage 6: Observability (Helm & Dashboards)")
-    ctx_str = context.model_dump_json(indent=2)
 
-    print("Select output type:")
-    print("1. Helm Chart (Prometheus/Loki) [default]")
-    print("2. Grafana Dashboard JSON")
-    sub_choice = input("Choice (1/2): ").strip()
-    
-    is_dashboard = (sub_choice == '2')
-    target_desc = "Grafana Dashboard" if is_dashboard else "Helm Chart"
-    
-    # Initialize
-    try:
-        wa, wb, wc = ObservabilityWriterA(), ObservabilityWriterB(), ObservabilityWriterC()
-        reviewer = ObservabilityReviewer()
-    except Exception as e:
-        logger.warning("API Keys missing, using mocks: %s", e)
-        from src.llm_clients.mock_client import MockClient
-        class MockObsWriter:
-            def generate(self, context=""): return MockClient("MockObs").call("helm chart")
-            def generate_dashboard(self, context=""): return MockClient("MockObs").call("grafana dashboard json")
-        wa, wb, wc = MockObsWriter(), MockObsWriter(), MockObsWriter()
-        class MockObsReviewer:
-            def review_and_merge(self, a, b, c, validation_report=""):
-                if a.strip().startswith("{"):
-                    return (a, "Mock Review: Valid JSON dashboard structure confirmed.")
-                a_clean = a.replace("```yaml", "").replace("```", "")
-                return (a_clean, "Mock Review: Standard Prometheus/Loki stack selected.")
-        reviewer = MockObsReviewer()
-        
-    executor = ObservabilityExecutor()
-    
-    generate_fn = (lambda w, ctx: w.generate_dashboard(context=ctx)) if is_dashboard else (lambda w, ctx: w.generate(ctx))
-    output_files = {"k8s/dashboards/dashboard.json": None} if is_dashboard else {"helm/monitoring/Chart.yaml": None}
-    
-    # Generate in parallel
-    logger.info("Generating drafts in parallel", extra={"stage": "Observability", "type": target_desc})
-    print(f"Drafting {target_desc}s in parallel (Gemini, Groq, NVIDIA)...")
-    drafts = run_writers_parallel(
-        writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
-        generate_fn=generate_fn,
-        context=ctx_str,
-        stage="Observability",
-    )
-    
-    return stage_decision_loop(
-        stage_name="Observability", reviewer=reviewer, drafts=drafts,
-        executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
-        guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
-        publisher=publisher, output_files=output_files,
-        project_path=project_path, run_id=run_id,
-    )
 
 
 # ================================================================
@@ -575,53 +517,87 @@ def run_cost_stage(project_path, context: ProjectContext, run_id="") -> StageRes
         return StageResult(stage_name="Cost", status=Decision.REJECT, reasoning=f"Error: {e}")
 
     
-    # Initialize
-    try:
-        wa, wb, wc = DebugWriterA(), DebugWriterB(), DebugWriterC()
-        reviewer = DebugReviewer()
-    except Exception as e:
-        logger.warning("API Keys missing, using mocks: %s", e)
-        from src.llm_clients.mock_client import MockClient
-        class MockDebugA:
-            def analyze(self, err, context=""): return MockClient("RCA").call(f"root cause analysis: {err[:100]}")
-        class MockDebugB:
-            def analyze(self, err, context=""): return MockClient("Security").call(f"security engineer analyzing: {err[:100]}")
-        class MockDebugC:
-            def analyze(self, err, context=""): return MockClient("Perf").call(f"performance engineer analyzing: {err[:100]}")
-        wa, wb, wc = MockDebugA(), MockDebugB(), MockDebugC()
-        class MockDebugReviewer:
-            def review_and_merge(self, a, b, c, validation_report=""):
-                resp = MockClient("LeadSRE").call("lead sre incident report review")
-                if "REPORT:" in resp:
-                    parts = resp.split("REPORT:", 1)
-                    return (parts[1].strip(), parts[0].replace("REASONING:", "").strip())
-                return (resp, "Mock review")
-        reviewer = MockDebugReviewer()
-    
-    executor = DebugExecutor()
-    
-    # Analyze in parallel
-    logger.info("Analyzing with 3 specialists in parallel", extra={"stage": "Debug"})
-    print("\n🔍 Analyzing error with 3 specialists in parallel...")
-    drafts = run_writers_parallel(
-        writers=[(wa, "RCA-Gemini"), (wb, "Security-Groq"), (wc, "Perf-NVIDIA")],
-        generate_fn=lambda w, ctx: w.analyze(error_input, context=ctx),
-        context=ctx_str,
-        stage="Debug",
-    )
-    # Replace empty strings with failure message for debug
-    drafts = [d if d else "Analysis failed." for d in drafts]
-    
-    import time as _time
-    timestamp = _time.strftime("%Y%m%d_%H%M%S")
-    return stage_decision_loop(
-        stage_name="Debug", reviewer=reviewer, drafts=drafts,
-        executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
-        guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
-        publisher=publisher, output_files={f"debug_reports/incident_{timestamp}.md": None},
-        project_path=project_path, run_id=run_id,
-    )
 
+
+
+# ================================================================
+# MANUAL MENU
+# ================================================================
+def run_manual_menu(project_path, context, audit, publisher, run_id):
+    while True:
+        print("\n--- Manual Tools (Legacy) ---")
+        print("2. [Scan]          Generate Security Configs (Sonar/OTel) [NEW]")
+        print("3. [Docker]        Generate Dockerfile")
+        print("4. [Compose]       Generate Docker Compose")
+        print("5. [K8s]           Generate Kubernetes Manifests")
+        print("6. [CI/CD]         Generate GitHub Actions")
+        print("7. [Debug]         Troubleshoot Errors")
+        print("8. [Cost]          Cloud Cost Estimation")
+        print("b. Back to Main Menu")
+        
+        choice = input("Run Stage: ").strip()
+        
+        result = None
+        if choice == 'b':
+            return
+        elif choice == '2':
+            # Temporary manual runner for Scan
+            from src.decision_engine.generator.llm_generator import LLMGenerator
+            from src.llm_clients.gemini_client import GeminiClient
+            try:
+                # Reuse V2 generator for manual run
+                try:
+                    from src.llm_clients.gemini_client import GeminiClient
+                    client = GeminiClient()
+                    client_name = "Gemini"
+                except Exception:
+                    print("⚠️  Gemini not available. Using Mock Client for Scan.")
+                    from src.llm_clients.mock_client import MockClient
+                    client = MockClient("MockScan")
+                    client_name = "MockScan"
+                    
+                gen = LLMGenerator(client, client_name)
+                from src.utils.prompt_loader import load_prompt
+                tmpl = load_prompt("security", "scan_config")
+                
+                # Mock plan
+                class MockPlan:
+                    observability_level = "strict"
+                    service_type = "microservices"
+                
+                spec = gen.generate(tmpl, {"context": context.raw_context_summary, "plan_summary": "Manual Scan Run"})
+                
+                # Parse output
+                import os, re
+                params = re.findall(r"FILENAME: (.*?)\n```(?:\w+)?\n(.*?)```", spec.file_content, re.DOTALL)
+                print("\n📦 Generating Configs:")
+                for rel, content in params:
+                    fp = os.path.join(project_path, rel.strip())
+                    os.makedirs(os.path.dirname(fp), exist_ok=True)
+                    with open(fp, "w") as f: f.write(content.strip())
+                    print(f"  - {rel.strip()}")
+                
+                result = StageResult(stage_name="Scan", status=Decision.APPROVE, cycles=1)
+            except Exception as e:
+                print(f"❌ Scan generation failed: {e}")
+        elif choice == '3':
+            result = run_docker_stage(project_path, context, audit, publisher, run_id)
+        elif choice == '4':
+            result = run_compose_stage(project_path, context, audit, publisher, run_id)
+        elif choice == '5':
+            result = run_k8s_stage(project_path, context, audit, publisher, run_id)
+        elif choice == '6':
+            result = run_cicd_stage(project_path, context, audit, publisher, run_id)
+        elif choice == '8': 
+            result = run_cost_stage(project_path, context, run_id)
+        elif choice == '7':
+            result = run_debug_stage(project_path, context, audit, publisher, run_id)
+        else:
+            print("⏳ Invalid option.")
+            continue
+            
+        if result and result.status == Decision.APPROVE:
+            print(f"🎉 Stage {result.stage_name} completed successfully.")
 
 # ================================================================
 # MAIN WIZARD
@@ -647,41 +623,23 @@ def main():
     print(f"✅ Context Loaded: {context.language} app, Ports: {context.ports}")
     
     while True:
-        print("\n--- Pipeline Menu ---")
-        print("2. [Docker]        Generate Dockerfile")
-        print("3. [Compose]       Generate Docker Compose")
-        print("4. [K8s]           Generate Kubernetes Manifests")
-        print("5. [CI/CD]         Generate GitHub Actions")
-        print("6. [Observability] Generate Helm/Monitoring")
-        print("7. [Debug]         Troubleshoot Errors")
-        print("8. [Cost]          Cloud Cost Estimation")
-        print("0. Exit")
+        print("\n--- DevOps AI Agent (v12.0) ---")
+        print("1. 🧠  Auto-Pilot (Recommended) [V2 Decision Engine]")
+        print("2. 🛠️   Manual Tools / Legacy Mode")
+        print("q. Exit")
         
-        choice = input("Run Stage: ")
+        choice = input("Select: ").strip().lower()
         
-        result = None
-        if choice == '2':
-            result = run_docker_stage(project_path, context, audit, publisher, run_id)
-        elif choice == '3':
-            result = run_compose_stage(project_path, context, audit, publisher, run_id)
-        elif choice == '4':
-            result = run_k8s_stage(project_path, context, audit, publisher, run_id)
-        elif choice == '5':
-            result = run_cicd_stage(project_path, context, audit, publisher, run_id)
-        elif choice == '6':
-            result = run_observability_stage(project_path, context, audit, publisher, run_id)
-        elif choice == '8': # New elif for Cost
-            result = run_cost_stage(project_path, context, run_id)
-        elif choice == '7':
-            result = run_debug_stage(project_path, context, audit, publisher, run_id)
-        elif choice == '0':
+        if choice == '1':
+            orchestrator = V2Orchestrator()
+            orchestrator.run_pipeline(project_path, context)
+        elif choice == '2':
+            run_manual_menu(project_path, context, audit, publisher, run_id)
+        elif choice == 'q':
             break
         else:
-            print("⏳ Not implemented yet.")
+            print("Invalid selection.")
             continue
-            
-        if result and result.status == Decision.APPROVE:
-            print(f"🎉 Stage {result.stage_name} completed successfully.")
         
     # Save audit trail on exit
     audit_path = audit.save()
