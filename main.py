@@ -306,10 +306,10 @@ def run_k8s_stage(project_path, context: ProjectContext, audit, publisher=None, 
     
     return stage_decision_loop(
         stage_name="K8s", reviewer=reviewer, drafts=drafts,
-        executor=executor, run_executor_fn=lambda final: executor.run(final, os.path.join(project_path, "manifest.yaml")),
+        executor=executor, run_executor_fn=lambda final: executor.run(final, os.path.join(project_path, "k8s", "manifest.yaml")),
         guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
         det_reviewer=det_reviewer, det_fn=lambda r, d: r.review_k8s(d),
-        publisher=publisher, output_files={"manifest.yaml": None},
+        publisher=publisher, output_files={"k8s/manifest.yaml": None},
         project_path=project_path, run_id=run_id,
     )
 

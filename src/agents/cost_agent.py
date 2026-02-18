@@ -23,6 +23,8 @@ class CostEstimator:
 
 class CostExecutor:
     def run(self, content: str, project_path: str):
-        path = os.path.join(project_path, "cost_estimate.md")
+        directory = os.path.join(project_path, "cost")
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "cost_estimate.md")
         write_file(path, content)
         print(f"💰 Wrote Cost Estimate to {path}")
