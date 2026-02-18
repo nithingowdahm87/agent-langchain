@@ -9,23 +9,12 @@ class DockerComposeWriter:
         self.ROLE = "DevOps Engineer"
 
     def generate(self, context_json: str) -> str:
-        prompt = f"""
-        You are a {self.ROLE}.
-        
-        TASK: Create a `docker-compose.yml` for this project.
-        
-        CONTEXT (from Code Analysis):
-        {context_json}
-        
-        REQUIREMENTS:
-        1. Use version '3.8' or higher.
-        2. Define a service for the main application.
-        3. If a database or cache is mentioned in dependencies/env_vars (e.g., mongo, redis, postgres), add it as a service.
-        4. Expose the ports listed in Context.
-        5. Use environment variables.
-        
-        Return ONLY the YAML content.
-        """.strip()
+        try:
+            task = read_file("configs/prompts/compose/writer.md")
+        except Exception:
+            task = "Generate a docker-compose.yml."
+            
+        prompt = f"{task}\n\nAPPLICATION CONTEXT:\n{context_json}"
         return self.llm.call(prompt)
 
 class ComposeReviewer:

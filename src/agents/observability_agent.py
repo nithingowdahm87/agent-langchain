@@ -25,22 +25,14 @@ class ObservabilityWriterA:
         """.strip()
         return self.llm.call(prompt)
 
-    def generate_dashboard(self, context: str = "") -> str:
-        prompt = f"""
-        You are a Monitoring expert.
-        PROJECT CONTEXT:
-        {context}
-        
-        Generate a Grafana Dashboard JSON model for this application.
-        - Focus on "USE Method" (Utilization, Saturation, Errors).
-        - Add alerts for high latency or error rates.
-        - If Node.js detected: Add Event Loop Lag, Active Handles.
-        - If Python detected: Add GIL contention, GC stats.
-        
-        Return ONLY valid JSON.
-        """.strip()
-        resp = self.llm.call(prompt)
-        return resp.replace("```json", "").replace("```", "").strip()
+    def generate_dashboard(self, context: str) -> str:
+        try:
+            task = read_file("configs/prompts/observability/writer.md")
+        except Exception:
+            task = "Generate a Grafana Dashboard JSON."
+            
+        prompt = f"{task}\n\nCONTEXT:\n{context}\n\nGenerate DASHBOARD JSON."
+        return self.llm.call(prompt)
 
 class ObservabilityWriterB:
     def __init__(self):
@@ -62,20 +54,14 @@ class ObservabilityWriterB:
         """.strip()
         return self.llm.call(prompt)
 
-    def generate_dashboard(self, context: str = "") -> str:
-        prompt = f"""
-        You are a Database Reliability Engineer.
-        PROJECT CONTEXT:
-        {context}
-        
-        Generate a Grafana Dashboard JSON model.
-        - Focus on Database metrics if present (Connections, Cache Hit Rate).
-        - Focus on RED method (Rate, Errors, Duration) for APIs.
-        
-        Return ONLY valid JSON.
-        """.strip()
-        resp = self.llm.call(prompt)
-        return resp.replace("```json", "").replace("```", "").strip()
+    def generate_dashboard(self, context: str) -> str:
+        try:
+            task = read_file("configs/prompts/observability/writer.md")
+        except Exception:
+            task = "Generate a Grafana Dashboard JSON."
+            
+        prompt = f"{task}\n\nCONTEXT:\n{context}\n\nGenerate DASHBOARD JSON."
+        return self.llm.call(prompt)
 
 class ObservabilityWriterC:
     def __init__(self):

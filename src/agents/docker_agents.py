@@ -13,79 +13,45 @@ class DockerWriterA:
             guidelines = read_file("configs/guidelines/docker-guidelines.md")
         except Exception:
             guidelines = "No specific guidelines found."
-
-        prompt = f"""
-        You are a senior DevOps engineer.
-        PROJECT CONTEXT (Stack/Dependencies):
-        {context}
-        
-        App directory tree:
-        {tree}
-        Guidelines:
-        {guidelines}
-        Write a production-ready Dockerfile for this app.
-        - Use multi-stage builds.
-        - Pin all image versions.
-        - Use non-root user.
-        - Set WORKDIR.
-        Return ONLY the Dockerfile text.
-        """.strip()
+    def generate(self, context: str) -> str:
+        try:
+            system = read_file("configs/prompts/system_master.md")
+            task = read_file("configs/prompts/docker/writer_a.md")
+        except Exception:
+            system = "You are a DevOps Engineer."
+            task = "Generate a Dockerfile."
+            
+        prompt = f"{system}\n\n{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class DockerWriterB:
     def __init__(self):
         self.llm = GroqClient()
         
-    def generate(self, app_path: str, context: str = "") -> str:
-        tree = scan_directory(app_path)
+    def generate(self, context: str) -> str:
         try:
-            guidelines = read_file("configs/guidelines/docker-guidelines.md")
+            system = read_file("configs/prompts/system_master.md")
+            task = read_file("configs/prompts/docker/writer_b.md")
         except Exception:
-            guidelines = "No specific guidelines found."
+            system = "You are a Security Engineer."
+            task = "Generate a secure Dockerfile."
             
-        prompt = f"""
-        You are a security-focused DevOps engineer.
-        PROJECT CONTEXT (Stack/Dependencies):
-        {context}
-        
-        App directory tree:
-        {tree}
-        Guidelines:
-        {guidelines}
-        Write an alternative Dockerfile with:
-        - Minimal base image.
-        - Hardened runtime.
-        - No unnecessary packages.
-        Return ONLY the Dockerfile text.
-        """.strip()
+        prompt = f"{system}\n\n{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class DockerWriterC:
     def __init__(self):
         self.llm = NvidiaClient()
         
-    def generate(self, app_path: str, context: str = "") -> str:
-        tree = scan_directory(app_path)
+    def generate(self, context: str) -> str:
         try:
-            guidelines = read_file("configs/guidelines/docker-guidelines.md")
+            system = read_file("configs/prompts/system_master.md")
+            task = read_file("configs/prompts/docker/writer_c.md")
         except Exception:
-            guidelines = "No specific guidelines found."
+            system = "You are a Performance Engineer."
+            task = "Generate an optimized Dockerfile."
             
-        prompt = f"""
-        You are a performance-focused DevOps engineer.
-        PROJECT CONTEXT (Stack/Dependencies):
-        {context}
-        
-        App directory tree:
-        {tree}
-        Guidelines:
-        {guidelines}
-        Write an alternative Dockerfile with:
-        - Optimized build cache layers.
-        - Specific focus on build speed and image size.
-        - Use advanced multi-stage techniques.
-        Return ONLY the Dockerfile text.
-        """.strip()
+        prompt = f"{system}\n\n{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class DockerReviewer:

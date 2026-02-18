@@ -199,7 +199,7 @@ def run_docker_stage(project_path, context: ProjectContext, audit, publisher=Non
     print("Drafting Dockerfiles in parallel (Gemini, Groq, NVIDIA)...")
     drafts = run_writers_parallel(
         writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
-        generate_fn=lambda w, ctx: w.generate(project_path, context=ctx),
+        generate_fn=lambda w, ctx: w.generate(context=ctx),
         context=context_str,
         stage="Docker",
     )
@@ -298,7 +298,7 @@ def run_k8s_stage(project_path, context: ProjectContext, audit, publisher=None, 
     print("Drafting Manifests in parallel (Gemini, Groq, NVIDIA)...")
     drafts = run_writers_parallel(
         writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
-        generate_fn=lambda w, ctx: w.generate(service_name, context=ctx),
+        generate_fn=lambda w, ctx: w.generate(context=ctx),
         context=ctx_str,
         stage="K8s",
     )
@@ -509,7 +509,7 @@ def main():
     audit = AuditLog(run_id=run_id)
     publisher = GitOpsPublisher()
     
-    print_header(f"DevOps AI Agent Pipeline v7.0 [run:{run_id}]")
+    print_header(f"DevOps AI Agent Pipeline v8.0 [run:{run_id}]")
     logger.info("Pipeline started | gitops_mode=%s", publisher.mode, extra={"stage": "init"})
     
     project_path = input("Enter project path: ").strip()

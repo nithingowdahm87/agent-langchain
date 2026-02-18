@@ -9,22 +9,12 @@ class CIWriterA:
         self.llm = GeminiClient()
         
     def generate(self, context: str) -> str:
-        prompt = f"""
-        You are a DevOps Engineer specializing in GitHub Actions.
-        PROJECT CONTEXT:
-        {context}
-        
-        Task: Write a .github/workflows/ci.yml file.
-        Requirements:
-        - Checkout code.
-        - Setup language environment.
-        - Install dependencies.
-        - Run Linting.
-        - Run Tests.
-        - Build Docker image.
-        
-        Return ONLY the YAML content.
-        """.strip()
+        try:
+            task = read_file("configs/prompts/cicd/writer.md")
+        except Exception:
+            task = "Generate a CI/CD workflow."
+            
+        prompt = f"{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class CIWriterB:
@@ -32,20 +22,12 @@ class CIWriterB:
         self.llm = GroqClient()
         
     def generate(self, context: str) -> str:
-        prompt = f"""
-        You are a Security Engineer specializing in DevSecOps.
-        PROJECT CONTEXT:
-        {context}
-        
-        Task: Write a .github/workflows/security.yml file.
-        Requirements:
-        - Run Trivy vulnerability scanner.
-        - Run SonarQube analysis (placeholder).
-        - Check for secrets in code.
-        - Build Docker image securely.
-        
-        Return ONLY the YAML content.
-        """.strip()
+        try:
+            task = read_file("configs/prompts/cicd/writer.md")
+        except Exception:
+            task = "Generate a CI/CD workflow."
+            
+        prompt = f"{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class CIWriterC:
@@ -53,19 +35,12 @@ class CIWriterC:
         self.llm = NvidiaClient()
         
     def generate(self, context: str) -> str:
-        prompt = f"""
-        You are a Release Engineer focused on Speed.
-        PROJECT CONTEXT:
-        {context}
-        
-        Task: Write a .github/workflows/deploy.yml file.
-        Requirements:
-        - Aggressive caching (npm/pip/docker).
-        - Parallel jobs where possible.
-        - Build and Push to Registry (placeholder).
-        
-        Return ONLY the YAML content.
-        """.strip()
+        try:
+            task = read_file("configs/prompts/cicd/writer.md")
+        except Exception:
+            task = "Generate a CI/CD workflow."
+            
+        prompt = f"{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class CIReviewer:

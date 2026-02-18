@@ -7,82 +7,45 @@ class K8sWriterA:
     def __init__(self):
         self.llm = GeminiClient()
         
-    def generate(self, service_name: str, context: str = "") -> str:
+    def generate(self, context: str) -> str:
         try:
-            guidelines = read_file("configs/guidelines/k8s-guidelines.md")
+            system = read_file("configs/prompts/system_master.md")
+            task = read_file("configs/prompts/k8s/writer_a.md")
         except Exception:
-            guidelines = "No specific guidelines."
+            system = "You are a K8s Engineer."
+            task = "Generate Deployment manifests."
             
-        prompt = f"""
-        You are a Kubernetes expert.
-        PROJECT CONTEXT:
-        {context}
-        
-        Service name: {service_name}
-        Guidelines:
-        {guidelines}
-        Write Kubernetes manifests (Deployment + Service) for this service.
-        - Use data from PROJECT CONTEXT (ports, env vars).
-        - [NEW] Include a NetworkPolicy to isolate this service (default deny ingress, allow specific/necessary ports).
-        Return ONLY YAML (one or more documents), no explanation.
-        """.strip()
+        prompt = f"{system}\n\n{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class K8sWriterB:
     def __init__(self):
         self.llm = GroqClient()
         
-    def generate(self, service_name: str, context: str = "") -> str:
+    def generate(self, context: str) -> str:
         try:
-            guidelines = read_file("configs/guidelines/k8s-guidelines.md")
+            system = read_file("configs/prompts/system_master.md")
+            task = read_file("configs/prompts/k8s/writer_b.md")
         except Exception:
-            guidelines = "No specific guidelines."
+            system = "You are a Security Engineer."
+            task = "Generate secure Deployment manifests."
             
-        prompt = f"""
-        You are a security-focused Kubernetes engineer.
-        PROJECT CONTEXT:
-        {context}
-        
-        Service name: {service_name}
-        Guidelines:
-        {guidelines}
-        Write alternative manifests with:
-        - Strong Pod security context (runAsNonRoot, readOnlyRootFilesystem).
-        - Explicit requests and limits.
-        - [NEW] ServiceAccount, Role, and RoleBinding (Least Privilege).
-        - AutomountServiceAccountToken: false (unless needed).
-        - Use context for accurate ports.
-        Return ONLY YAML.
-        """.strip()
+        prompt = f"{system}\n\n{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class K8sWriterC:
     def __init__(self):
         self.llm = NvidiaClient()
         
-    def generate(self, service_name: str, context: str = "") -> str:
+    def generate(self, context: str) -> str:
         try:
-            guidelines = read_file("configs/guidelines/k8s-guidelines.md")
+            system = read_file("configs/prompts/system_master.md")
+            task = read_file("configs/prompts/k8s/writer_c.md")
         except Exception:
-            guidelines = "No specific guidelines."
+            system = "You are an SRE."
+            task = "Generate HA Deployment manifests."
             
-        prompt = f"""
-        You are a scalability-focused Kubernetes engineer.
-        PROJECT CONTEXT:
-        {context}
-        
-        Service name: {service_name}
-        Guidelines:
-        {guidelines}
-        Write alternative manifests with:
-        Write alternative manifests with:
-        - Horizontal Pod Autoscaling (HPA).
-        - Readiness and Liveness probes.
-        - Pod Disruption Budgets.
-        - [NEW] Use StatefulSet (if it's a DB) or Deployment.
-        - [NEW] Include a Job for initialization (e.g. DB migrations) if scripts are detected.
-        Return ONLY YAML.
-        """.strip()
+        prompt = f"{system}\n\n{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
 
 class K8sReviewer:
