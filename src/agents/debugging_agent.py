@@ -179,3 +179,28 @@ class DebugExecutor:
         path = os.path.join(directory, f"incident_{timestamp}.md")
         write_file(path, content)
         print(f"✅ Wrote incident report to {path}")
+
+
+class SelfHealer:
+    """Auto-fix agent that applies code patches."""
+    def __init__(self):
+        self.llm = GeminiClient()
+        
+    def fix_code(self, file_content: str, error_log: str) -> str:
+        """
+        Attempts to fix the code based on the error log.
+        Returns the new file content.
+        """
+        try:
+            task = read_file("configs/prompts/debug/healer.md")
+        except Exception:
+            task = "You are a Patch Engineer. Fix the code based on the error."
+            
+        prompt = f"{task}\n\nERROR LOG:\n{error_log}\n\nBROKEN CODE:\n{file_content}"
+        
+        # Call LLM
+        response = self.llm.call(prompt)
+        
+        # Cleanup response if it contains markdown code blocks despite instructions
+        clean_response = response.replace("```python", "").replace("```javascript", "").replace("```", "").strip()
+        return clean_response

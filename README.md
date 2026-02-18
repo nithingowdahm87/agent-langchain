@@ -1,4 +1,4 @@
-# 🚀 DevOps AI Agent Pipeline v5.0
+# 🚀 DevOps AI Agent Pipeline v10.0
 
 > A self-correcting, multi-agent DevOps platform that generates production-grade infrastructure files for any codebase — powered by 4 LLM providers working in parallel, with built-in policy enforcement, audit trails, and GitOps publishing.
 
@@ -12,7 +12,7 @@
 - [What Is This?](#-what-is-this)
 - [Architecture](#-architecture)
 - [Quick Start](#-quick-start)
-- [The 7 Pipeline Stages](#-the-7-pipeline-stages)
+- [The Pipeline Stages](#-the-pipeline-stages)
 - [Production Features](#-production-features)
 - [Project Structure](#-project-structure)
 - [Configuration](#-configuration)
@@ -34,6 +34,7 @@ Point this at **any codebase** and it generates everything you need for producti
 | 5 | CI/CD Workflows | `.github/workflows/main.yml` |
 | 6 | Monitoring Stack | `helm/monitoring/Chart.yaml` |
 | 7 | Incident Reports | `debug_reports/incident_*.md` |
+| 8 | Cost Estimate | `cost_estimate.md` |
 
 ---
 
@@ -146,15 +147,16 @@ Enter project path: /path/to/your/app
 3. [Compose]       Generate Docker Compose
 4. [K8s]           Generate Kubernetes Manifests
 5. [CI/CD]         Generate GitHub Actions
-6. [Observability] Generate Helm/Monitoring
+6. [Observability] Generate Helm/Monitoring/Dashboards
 7. [Debug]         Troubleshoot Errors
+8. [Cost]          Cloud Cost Estimation
 0. Exit
 Run Stage: _
 ```
 
 ---
 
-## 🔄 The 7 Pipeline Stages
+## 🔄 The Pipeline Stages
 
 ### Stage 1: Code Analysis *(Automatic)*
 
@@ -186,7 +188,9 @@ Generates a Helm chart with Prometheus, Loki, and Grafana as dependencies.
 
 ### Stage 7: Debugging
 
-Paste an error or provide a log file → 3 specialists analyze (RCA, Security, Performance) → Lead SRE synthesizes an incident report with root cause and remediation.
+### Stage 8: Cloud Cost Estimation (FinOps)
+
+Analyzes generated manifests to estimate monthly cloud spend (AWS/GCP/Azure) for compute, storage, and networking.
 
 ---
 
@@ -235,7 +239,27 @@ GITHUB_REPO=owner/repo
 GITHUB_BASE_BRANCH=main   # optional, defaults to main
 ```
 
-When `GITHUB_TOKEN` is not set, the pipeline writes files locally (default behavior).
+### Phase 8: Production-Grade Prompts (v8.0)
+
+| Feature | Details |
+|---------|---------|
+| **Prompt Library** | Externalized prompts in `configs/prompts/` |
+| **Role Personas** | Enforces "Senior DevOps" constraints (Non-root, ReadOnly FS) |
+| **Istio Support** | K8s agents now generate VirtualService/Gateway resources |
+
+### Phase 9: FinOps (v9.0)
+
+| Feature | Details |
+|---------|---------|
+| **Cost Awareness** | Estimates monthly spend for generated infrastructure |
+| **Resource Logic** | Maps CPU/RAM requests to standard cloud instances |
+
+### Phase 10: Self-Healing (v10.0)
+
+| Feature | Details |
+|---------|---------|
+| **Auto-Fix** | `SelfHealer` agent applies patches to broken code |
+| **Integration** | Seamlessly available in `Debug` stage after RCA |
 
 ---
 
@@ -417,7 +441,11 @@ chmod +x bin/kubeval
 | v2.0 | — | Multi-writer + reviewer pattern |
 | v3.0 | — | 7 stages + refinement loop + deterministic validation |
 | v4.0 | Auditable | Structured logging, parallel writers, audit trail |
-| v5.0 | **Production** | GitOps PR model, OPA policy engine, correlation IDs |
+| v6.0 | **Runtime** | K8s Jobs, NetworkPolicy, RBAC added |
+| v7.0 | **Ops** | Grafana Dashboards & Monitoring Stack |
+| v8.0 | **Pro Prompts** | Externalized Prompt Library + Role Personas |
+| v9.0 | **FinOps** | Cloud Cost Estimation Agent |
+| v10.0 | **Self-Healing** | Auto-Fix capabilities in Debug Stage |
 
 ---
 

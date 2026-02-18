@@ -450,6 +450,73 @@ def run_debug_stage(project_path, context: ProjectContext, audit, publisher=None
     
     if not error_input.strip():
         print("❌ No input provided.")
+        return StageResult(stage_name="Debug", status=Decision.REJECT, reasoning="No input")
+    
+    # Initialize
+    try:
+        wa, wb, wc = DebugWriterA(), DebugWriterB(), DebugWriterC()
+        reviewer = DebugReviewer()
+    except Exception as e:
+        logger.warning("API Keys missing, using mocks: %s", e)
+        from src.llm_clients.mock_client import MockClient
+        class MockDebugWriter:
+            def analyze(self, e, c=""): return MockClient("MockDebug").call("debug analysis")
+        wa, wb, wc = MockDebugWriter(), MockDebugWriter(), MockDebugWriter()
+        class MockDebugReviewer:
+            def review_and_merge(self, a, b, c, v=""): return ("Mock Incident Report", "Mock Reasoning")
+        reviewer = MockDebugReviewer()
+        
+    executor = DebugExecutor()
+    
+    # Analyze
+    print("Analyzing incident (RCA, Security, Performance)...")
+    a1 = wa.analyze(error_input, ctx_str)
+    a2 = wb.analyze(error_input, ctx_str)
+    a3 = wc.analyze(error_input, ctx_str)
+    
+    report, reasoning = reviewer.review_and_merge(a1, a2, a3)
+    
+    print("\n" + "="*40)
+    print("INCIDENT REPORT")
+    print("="*40)
+    print(report)
+    print("="*40 + "\n")
+    
+    executor.run(report, project_path)
+    
+    # Auto-Fix (Self-Healing)
+    choice = input("Attempt to apply fix? (y/n): ").strip().lower()
+    if choice in ('y', 'yes'):
+        file_path = input("Enter path to broken file: ").strip()
+        abs_path = os.path.join(project_path, file_path) if not os.path.isabs(file_path) else file_path
+        
+        if os.path.exists(abs_path):
+            try:
+                from src.tools.file_ops import read_file, write_file
+                content = read_file(abs_path)
+                
+                print("🚑 Self-Healer is analyzing and fixing code...")
+                from src.agents.debugging_agent import SelfHealer
+                healer = SelfHealer()
+                fixed_content = healer.fix_code(content, error_input)
+                
+                print("\nPROPOSED FIX:\n")
+                # Show diff roughly
+                import difflib
+                diff = difflib.unified_diff(content.splitlines(), fixed_content.splitlines(), lineterm='')
+                for line in diff:
+                    print(line)
+                
+                confirm = input("\nApply this fix? (y/n): ").strip().lower()
+                if confirm in ('y', 'yes'):
+                    write_file(abs_path, fixed_content)
+                    print(f"✅ Fix applied to {abs_path}")
+                else:
+                    print("❌ Fix discarded.")
+            except Exception as e:
+                print(f"❌ Self-Healing failed: {e}")
+        else:
+            print(f"❌ File not found: {abs_path}")
     
     return StageResult(stage_name="Debug", status=Decision.APPROVE, reasoning="Debugging complete")
 
@@ -550,7 +617,7 @@ def main():
     audit = AuditLog(run_id=run_id)
     publisher = GitOpsPublisher()
     
-    print_header(f"DevOps AI Agent Pipeline v9.0 [run:{run_id}]")
+    print_header(f"DevOps AI Agent Pipeline v10.0 [run:{run_id}]")
     logger.info("Pipeline started | gitops_mode=%s", publisher.mode, extra={"stage": "init"})
     
     project_path = input("Enter project path: ").strip()
