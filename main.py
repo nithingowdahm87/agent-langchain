@@ -15,6 +15,7 @@ from src.agents.guidelines_compliance_agent import GuidelinesComplianceAgent
 from src.agents.docker_compose_agent import DockerComposeWriter, ComposeReviewer, DockerComposeExecutor
 from src.agents.cicd_agent import CIWriterA, CIWriterB, CIWriterC, CIReviewer, CIExecutor
 from src.agents.observability_agent import ObservabilityWriterA, ObservabilityWriterB, ObservabilityWriterC, ObservabilityReviewer, ObservabilityExecutor
+from src.agents.cost_agent import CostEstimator, CostExecutor
 from src.agents.debugging_agent import DebugWriterA, DebugWriterB, DebugWriterC, DebugReviewer, DebugExecutor
 from src.llm_clients.gemini_client import GeminiClient
 from src.llm_clients.groq_client import GroqClient
@@ -445,12 +446,52 @@ def run_debug_stage(project_path, context: ProjectContext, audit, publisher=None
             line = input()
             if line.strip() == 'END':
                 break
-            lines.append(line)
         error_input = '\n'.join(lines)
     
     if not error_input.strip():
         print("❌ No input provided.")
-        return StageResult(stage_name="Debug", status=Decision.REJECT, reasoning="No input")
+    
+    return StageResult(stage_name="Debug", status=Decision.APPROVE, reasoning="Debugging complete")
+
+
+# ================================================================
+# STAGE 8: Cloud Cost Estimation (FinOps)
+# ================================================================
+def run_cost_stage(project_path, context: ProjectContext, run_id="") -> StageResult:
+    print_header("Stage 8: Cloud Cost Estimation (FinOps)")
+    
+    # Check if K8s manifest exists
+    manifest_path = os.path.join(project_path, "manifest.yaml")
+    if not os.path.exists(manifest_path):
+        print("⚠️  No K8s manifest found. Skipping cost estimation.")
+        return StageResult(stage_name="Cost", status=Decision.REJECT, reasoning="No manifest found")
+        
+    try:
+        from src.tools.file_ops import read_file
+        manifest_content = read_file(manifest_path)
+    except Exception as e:
+        logger.error("Failed to read manifest: %s", e)
+        return StageResult(stage_name="Cost", status=Decision.REJECT, reasoning=f"Read error: {e}")
+        
+    print("Estimating monthly cloud costs based on manifests...")
+        estimator = CostEstimator()
+        report = estimator.estimate(manifest_content)
+        
+        executor = CostExecutor()
+        executor.run(report, project_path)
+        
+        print("\n" + "="*40)
+        print("COST ESTIMATION REPORT")
+        print("="*40)
+        print(report)
+        print("="*40 + "\n")
+        
+        return StageResult(stage_name="Cost", status=Decision.APPROVE, reasoning="Estimation complete")
+    except Exception as e:
+        logger.error("Cost estimation failed: %s", e)
+        print(f"❌ Cost estimation failed: {e}")
+        return StageResult(stage_name="Cost", status=Decision.REJECT, reasoning=f"Error: {e}")
+
     
     # Initialize
     try:
@@ -509,7 +550,7 @@ def main():
     audit = AuditLog(run_id=run_id)
     publisher = GitOpsPublisher()
     
-    print_header(f"DevOps AI Agent Pipeline v8.0 [run:{run_id}]")
+    print_header(f"DevOps AI Agent Pipeline v9.0 [run:{run_id}]")
     logger.info("Pipeline started | gitops_mode=%s", publisher.mode, extra={"stage": "init"})
     
     project_path = input("Enter project path: ").strip()
@@ -546,6 +587,8 @@ def main():
             result = run_cicd_stage(project_path, context, audit, publisher, run_id)
         elif choice == '6':
             result = run_observability_stage(project_path, context, audit, publisher, run_id)
+        elif choice == '8': # New elif for Cost
+            result = run_cost_stage(project_path, context, run_id)
         elif choice == '7':
             result = run_debug_stage(project_path, context, audit, publisher, run_id)
         elif choice == '0':
