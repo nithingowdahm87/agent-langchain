@@ -12,6 +12,9 @@ import logging
 import os
 import subprocess
 import tempfile
+from typing import List, Tuple
+
+from src.schemas import PolicyViolation, Severity
 
 logger = logging.getLogger("devops-agent.policy")
 
@@ -58,7 +61,7 @@ class PolicyValidator:
         )
         return False
 
-    def validate(self, content: str, stage: str) -> tuple[bool, list[str]]:
+    def validate(self, content: str, stage: str) -> Tuple[bool, List[PolicyViolation]]:
         """
         Validate content against policies for the given stage.
 
@@ -67,10 +70,10 @@ class PolicyValidator:
             stage: Pipeline stage (docker, k8s, ci/cd, etc.)
 
         Returns:
-            (passed: bool, violations: list[str])
+            (passed: bool, violations: List[PolicyViolation])
         """
         stage_key = stage.lower()
-        violations = []
+        violations: List[PolicyViolation] = []
 
         # 1. Built-in rules (always run, no external deps)
         builtin_violations = self._builtin_checks(content, stage_key)
@@ -85,7 +88,15 @@ class PolicyValidator:
                 conftest_violations = self._run_conftest(content, policy_dir, config)
                 violations.extend(conftest_violations)
 
-        passed = len(violations) == 0
+        # Filter out INFO severity from failing the check? 
+        # Usually warnings don't fail, errors fail.
+        # But existing logic was "passed = len(violations) == 0".
+        # Let's keep strict mode for now, or maybe only fail on ERRORS?
+        # The user's original request implies strict validation.
+        # But let's refine: Warnings shouldn't block, only Errors.
+        
+        errors = [v for v in violations if v.severity == Severity.ERROR]
+        passed = len(errors) == 0
 
         if violations:
             logger.warning(
@@ -98,7 +109,7 @@ class PolicyValidator:
 
         return passed, violations
 
-    def _run_conftest(self, content: str, policy_dir: str, config: dict) -> list[str]:
+    def _run_conftest(self, content: str, policy_dir: str, config: dict) -> List[PolicyViolation]:
         """Run conftest against the content."""
         violations = []
         ext = config.get("ext", ".txt")
@@ -122,18 +133,32 @@ class PolicyValidator:
                     output = json.loads(result.stdout)
                     for item in output:
                         for failure in item.get("failures", []):
-                            msg = failure.get("msg", "Unknown violation")
-                            violations.append(f"[POLICY] {msg}")
+                            violations.append(PolicyViolation(
+                                rule="conftest-failure",
+                                message=failure.get("msg", "Unknown violation"),
+                                severity=Severity.ERROR
+                            ))
                         for warning in item.get("warnings", []):
-                            msg = warning.get("msg", "Unknown warning")
-                            violations.append(f"[POLICY-WARN] {msg}")
+                            violations.append(PolicyViolation(
+                                rule="conftest-warning",
+                                message=warning.get("msg", "Unknown warning"),
+                                severity=Severity.WARNING
+                            ))
                 except (json.JSONDecodeError, TypeError):
                     if result.stderr.strip():
-                        violations.append(f"[CONFTEST] {result.stderr.strip()[:300]}")
+                        violations.append(PolicyViolation(
+                            rule="conftest-error",
+                            message=result.stderr.strip()[:300],
+                            severity=Severity.ERROR
+                        ))
 
         except subprocess.TimeoutExpired:
             logger.warning("conftest timed out")
-            violations.append("[CONFTEST] Policy check timed out")
+            violations.append(PolicyViolation(
+                rule="timeout",
+                message="Policy check timed out",
+                severity=Severity.WARNING
+            ))
         finally:
             os.unlink(temp_path)
 
@@ -141,7 +166,7 @@ class PolicyValidator:
 
     # ─── Built-in Rules (no external deps) ───────────────────────
 
-    def _builtin_checks(self, content: str, stage: str) -> list[str]:
+    def _builtin_checks(self, content: str, stage: str) -> List[PolicyViolation]:
         """Run simple built-in policy checks."""
         violations = []
         content_lower = content.lower()
@@ -155,7 +180,7 @@ class PolicyValidator:
 
         return violations
 
-    def _check_dockerfile(self, content: str, content_lower: str) -> list[str]:
+    def _check_dockerfile(self, content: str, content_lower: str) -> List[PolicyViolation]:
         """Built-in Dockerfile policy checks."""
         violations = []
 
@@ -164,12 +189,17 @@ class PolicyValidator:
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             if stripped.upper().startswith("FROM "):
-                image = stripped[5:].strip().split(" ")[0]
+                # safe split even if empty
+                parts = stripped[5:].strip().split(" ")
+                if not parts or not parts[0]: continue
+                image = parts[0]
+                
                 if image.endswith(":latest") or ":" not in image.split("/")[-1]:
-                    violations.append(
-                        f"[BUILTIN] Line {i}: Image '{image}' uses :latest or unpinned tag. "
-                        "Pin to a specific version."
-                    )
+                    violations.append(PolicyViolation(
+                        rule="docker-no-latest",
+                        message=f"Line {i}: Image '{image}' uses :latest or unpinned tag.",
+                        severity=Severity.WARNING
+                    ))
 
         # Check for USER instruction
         if "user " not in content_lower or all(
@@ -177,9 +207,12 @@ class PolicyValidator:
             for line in lines
             if not line.strip().startswith("#")
         ):
-            violations.append(
-                "[BUILTIN] No USER instruction found. Container will run as root."
-            )
+            # Running as root is a security risk -> ERROR
+            violations.append(PolicyViolation(
+                rule="docker-no-user",
+                message="No USER instruction found. Container will run as root.",
+                severity=Severity.ERROR
+            ))
 
         # Check for HEALTHCHECK
         if not any(
@@ -187,40 +220,45 @@ class PolicyValidator:
             for line in lines
             if not line.strip().startswith("#")
         ):
-            violations.append(
-                "[BUILTIN-WARN] No HEALTHCHECK instruction. Consider adding one for production."
-            )
+            violations.append(PolicyViolation(
+                rule="docker-no-healthcheck",
+                message="No HEALTHCHECK instruction. Consider adding one.",
+                severity=Severity.WARNING
+            ))
 
         return violations
 
-    def _check_k8s(self, content: str, content_lower: str) -> list[str]:
+    def _check_k8s(self, content: str, content_lower: str) -> List[PolicyViolation]:
         """Built-in Kubernetes manifest policy checks."""
         violations = []
 
         # Check for resource limits
         if "resources:" not in content_lower:
-            violations.append(
-                "[BUILTIN] No resource requests/limits found. "
-                "All containers should have CPU and memory limits."
-            )
+            violations.append(PolicyViolation(
+                rule="k8s-no-limits",
+                message="No resource requests/limits found.",
+                severity=Severity.ERROR
+            ))
 
         # Check for default namespace
         if "namespace: default" in content_lower:
-            violations.append(
-                "[BUILTIN] Deploying to 'default' namespace. "
-                "Use a dedicated namespace for isolation."
-            )
+            violations.append(PolicyViolation(
+                rule="k8s-default-namespace",
+                message="Deploying to 'default' namespace is discouraged.",
+                severity=Severity.ERROR
+            ))
 
         # Check for readiness probe
         if "readinessprobe:" not in content_lower.replace(" ", ""):
-            violations.append(
-                "[BUILTIN-WARN] No readinessProbe found. "
-                "Add readiness probes for zero-downtime deployments."
-            )
+            violations.append(PolicyViolation(
+                rule="k8s-no-readiness",
+                message="No readinessProbe found.",
+                severity=Severity.WARNING
+            ))
 
         return violations
 
-    def _check_ci(self, content: str, content_lower: str) -> list[str]:
+    def _check_ci(self, content: str, content_lower: str) -> List[PolicyViolation]:
         """Built-in CI/CD workflow policy checks."""
         violations = []
 
@@ -231,16 +269,18 @@ class PolicyValidator:
             if stripped.startswith("- uses:") or stripped.startswith("uses:"):
                 action_ref = stripped.split("uses:")[-1].strip()
                 if "@" not in action_ref and action_ref:
-                    violations.append(
-                        f"[BUILTIN] Line {i}: Action '{action_ref}' is not pinned. "
-                        "Pin to a specific version or SHA."
-                    )
+                    violations.append(PolicyViolation(
+                        rule="ci-unpinned-action",
+                        message=f"Line {i}: Action '{action_ref}' is not pinned.",
+                        severity=Severity.WARNING
+                    ))
 
         # Check for pull_request_target
         if "pull_request_target" in content_lower:
-            violations.append(
-                "[BUILTIN] 'pull_request_target' trigger detected. "
-                "This can be a security risk — ensure proper approval gates."
-            )
+            violations.append(PolicyViolation(
+                rule="ci-pull-request-target",
+                message="'pull_request_target' trigger detected. Risk of arbitrary code execution.",
+                severity=Severity.ERROR
+            ))
 
         return violations

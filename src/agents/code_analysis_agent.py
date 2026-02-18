@@ -1,9 +1,9 @@
 import os
 import json
-from typing import Dict, Any, List
-from src.tools.file_ops import scan_directory, read_file
-# Re-using context gatherer logic but structuring it for persistent cache
+from typing import Any
+from src.tools.file_ops import scan_directory, read_file, write_file
 from src.tools.context_gatherer import ContextGatherer
+from src.schemas import ProjectContext
 
 class CodeAnalysisAgent:
     """
@@ -14,16 +14,14 @@ class CodeAnalysisAgent:
         self.project_path = project_path
         self.cache_file = os.path.join(project_path, ".devops_context.json")
     
-    def analyze(self) -> Dict[str, Any]:
+    def analyze(self) -> ProjectContext:
         print(f"🕵️  Code Analysis Agent: Scanning {self.project_path}...")
         
         # 1. Gather raw context using our existing tool
         gatherer = ContextGatherer(self.project_path)
         raw_context = gatherer.get_context()
         
-        # 2. Extract structured data (Parsing the raw string - or better, enhancing gathering)
-        # For now, we will perform some basic extraction here, but ideally ContextGatherer should return dict
-        
+        # 2. Extract structured data
         analysis = {
             "project_name": os.path.basename(os.path.abspath(self.project_path)),
             "language": "unknown",
@@ -41,13 +39,16 @@ class CodeAnalysisAgent:
         self._detect_ports(analysis)
         self._detect_env_vars(analysis)
         
-        # 4. Save to Cache
-        self._save_cache(analysis)
+        # 4. Create Pydantic model
+        context = ProjectContext(**analysis)
+        
+        # 5. Save to Cache
+        self._save_cache(context)
         print(f"✅ Analysis complete. Cached to {self.cache_file}")
         
-        return analysis
+        return context
 
-    def _detect_node(self, analysis: Dict[str, Any]):
+    def _detect_node(self, analysis: dict):
         pkg_path = os.path.join(self.project_path, "package.json")
         if os.path.exists(pkg_path):
             analysis["language"] = "javascript/node"
@@ -61,7 +62,7 @@ class CodeAnalysisAgent:
                     analysis["frameworks"].append("react")
             except Exception: pass
 
-    def _detect_python(self, analysis: Dict[str, Any]):
+    def _detect_python(self, analysis: dict):
         req_path = os.path.join(self.project_path, "requirements.txt")
         if os.path.exists(req_path):
             analysis["language"] = "python"
@@ -71,12 +72,10 @@ class CodeAnalysisAgent:
             if "django" in content.lower(): analysis["frameworks"].append("django")
             if "fastapi" in content.lower(): analysis["frameworks"].append("fastapi")
 
-    def _detect_ports(self, analysis: Dict[str, Any]):
+    def _detect_ports(self, analysis: dict):
         # Naive scan for common port patterns
-        # In a real agent, we'd use regex on code files
         import re
         full_text = analysis["raw_context_summary"] 
-        # Scan all files? No, too expensive. Scan likely files.
         likely_files = ["server.js", "app.py", "main.py", "index.js", "docker-compose.yml"]
         
         files_to_scan = []
@@ -102,8 +101,7 @@ class CodeAnalysisAgent:
         elif "django" in analysis["frameworks"]:
             analysis["ports"].append("8000")
 
-    def _detect_env_vars(self, analysis: Dict[str, Any]):
-        # Naive scan for process.env.VAR or os.environ.get('VAR')
+    def _detect_env_vars(self, analysis: dict):
         import re
         likely_files = ["server.js", "app.py", "main.py", "config.js", "settings.py"]
         files_to_scan = []
@@ -124,16 +122,17 @@ class CodeAnalysisAgent:
             
         analysis["env_vars"] = list(envs)
 
-    def _save_cache(self, analysis: Dict[str, Any]):
-        with open(self.cache_file, "w") as f:
-            json.dump(analysis, f, indent=2)
+    def _save_cache(self, context: ProjectContext):
+        write_file(self.cache_file, context.model_dump_json(indent=2))
 
-    def get_cached_analysis(self) -> Dict[str, Any]:
+    def get_cached_analysis(self) -> ProjectContext:
         """Reads from cache if exists, otherwise analyzes"""
         if os.path.exists(self.cache_file):
             print(f"⚡ Loading cached analysis from {self.cache_file}")
             try:
-                with open(self.cache_file, "r") as f:
-                    return json.load(f)
-            except Exception: return self.analyze()
+                content = read_file(self.cache_file)
+                return ProjectContext.model_validate_json(content)
+            except Exception:
+                print("⚠️  Cache invalid, re-analyzing...")
+                return self.analyze()
         return self.analyze()
