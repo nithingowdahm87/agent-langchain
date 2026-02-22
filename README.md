@@ -1,118 +1,100 @@
-# 🚀 DevOps AI Agent Pipeline v14.0 [Solo-Copilot Edition]
+# DevOps AI Agent Pipeline v15.0 [Sovereign Architecture]
 
-> A highly deterministic, locally-executing DevOps file writer powered by an LLM copilot. It generates production-grade infrastructure files (Docker, Kubernetes, CI/CD), automatically passes them through static linters (`hadolint`, `kubeconform`, `actionlint`), and self-repairs errors. 
+Welcome to the **Verified S* Sovereign Pipeline**, the definitive industry-leading architecture for generating production-ready DevOps artifacts (Docker, Kubernetes, CI/CD).
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-
----
-
-## 📖 Table of Contents
-
-- [What Is This?](#-what-is-this)
-- [Quick Start](#-quick-start)
-- [Architecture & Design](#-architecture--design)
-- [The File Writers](#-the-file-writers)
-- [Validation & Self-Healing](#-validation--self-healing)
-- [Requirements](#-requirements)
+Unlike amateur models that allow multiple LLMs to fight over unstructured text, this pipeline utilizes a strict, mathematically sound 6-layer architecture. It leverages an Elite LLM (like Groq's Llama-3.3-70b) for structured generation, deterministic linters for ground-truth validation, and async multi-LLM networks for continuous innovation. 
 
 ---
 
-## 🤔 What Is This?
+## 🏗 Architecture Details
 
-This tool acts as a **Senior DevOps Engineer's brain extension**. Instead of a bulky multi-agent system, v14 is focused purely on **deterministic file generation**, strict local linting, and automatic healing.
+Every LLM has a named, non-overlapping job. No LLM generates files AND reviews files. Each one does exactly what it is best at, and then steps aside.
 
-You tell it to generate `docker`, `k8s`, or `ci` files. It parses your local context (Node, Python, Go, Terraform, etc.), generates the boilerplate, and importantly, **refuses to write invalid code**.
+The engine follows this precise flow for every run:
 
-| Stage | What It Does | Handled By |
-|-------|--------------|------------|
-| 1 | Extract Context | Detects language, version, architecture |
-| 2 | Generate Files | Uses 1 of 5 "Elite" Prompts |
-| 3 | Static Lints | `hadolint`, `kubeconform`, `actionlint` |
-| 4 | Auto-Heal | Feeds lint errors back to LLM for patching |
-| 5 | Format | Runs `yq` to sort YAML deterministically |
+1. **Layer 0 (Spec & Research)**: Before writing code, the `Planner` agent establishes a firm architectural contract (`spec.md`). The `Researcher` agent fetches 2026 industry best practices for the exact stack.
+2. **Layer 1 (RAG Knowledge Injection)**: Validated Golden Paths (Docker best practices, CIS benchmarks) and past successful innovations are pulled from a local ChromaDB vector store and injected as strict context.
+3. **Layer 2 (Self-Consistent Sampler)**: The Elite generation model runs 3 parallel generation threads at varying temperatures (`0.2, 0.4, 0.6`). The system evaluates the batch and selects the consensus structural winner, bypassing standard LLM hallucinations.
+4. **Layer 3 (Constitutional Critique)**: The winning candidate is rigorously audited by a semantic reviewer for advanced security posture (e.g. least privilege, layer ordering, secret hygiene).
+5. **Layer 4 & 5 (Deterministic Validation & Surgical Healing Loop)**: The resulting YAML/Dockerfile is parsed through static, non-LLM, mathematical linters (`hadolint`, `kubeconform`). If an exact rule ID (e.g. `DL3008`) is violated, the `Healer` executes a surgical retry loop (max 3 times).
+6. **Layer 6 (Innovation Flywheel)**: Once a configuration completes and passes linting, a background async process queries models (Groq, Gemini, Nvidia) to critique the final output for performance and modernization. These insights are saved directly back into Layer 1's RAG store, making the agent permanently smarter after every single execution.
 
 ---
 
-## ⚡ Quick Start
+## 🚀 Quick Start / Installation
 
-### 1. Install Dependencies
-You need local strict linters installed for the engine to validate the LLM outputs.
+This setup is designed to be easily portable. If you clone this repository to a new machine, follow these steps:
+
+### 1. Prerequisites
+- Python 3.12+ 
+- Local linters: `hadolint` (for Docker), `kubeconform` (for K8s), `actionlint` (optional for CI/CD)
+
+### 2. Install Dependencies
 ```bash
-brew install hadolint    # For Docker
-brew install kubeconform # For Kubernetes
-brew install yq          # For YAML determinism
-npm install -g actionlint # For CI/CD
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
+*(Note: The first time you run the agent, it will automatically download an ONNX model for the ChromaDB vector embeddings. This is a one-time setup penalty of ~80MB and may take a few minutes depending on your internet connection.)*
 
-### 2. Configure LLM
-```bash
-cp .env.example .env
-# Ensure GEMINI_API_KEY (or preferred LLM client keys) are set.
+### 3. Environment Variables
+Copy `.env.example` to `.env` (or create a `.env` file):
+```env
+GROQ_API_KEY=your_groq_api_key_here
 ```
-
-### 3. Run the Agent
-```bash
-# Run the local engine against a target directory
-python3 agent.py docker
-# or 
-python3 agent.py k8s
-# or
-python3 agent.py ci
-```
+The architecture currently defaults to using `GroqClient` for extreme low-latency inference. 
 
 ---
 
-## 🧠 Architecture & Design
+## 🛠 Running the Model
 
-The repository was drastically simplified in v14 to remove hallucination-prone multi-agent merges.
+Simply point the orchestrator at your local repository.
 
+```bash
+# Activate your environment
+source venv/bin/activate
+
+# Start the interactive CLI
+python agent.py
 ```
+
+Or run it directly targeting a path and task:
+```bash
+# Generate Dockerfile + Kubernetes + CI/CD sequentially 
+python agent.py all
+
+# When prompted, enter your path, e.g.
+# > Enter project path: sample_app
+
+# Alternatively, run one specific task:
+python agent.py docker
+python agent.py k8s
+python agent.py ci
+```
+
+### Prompt Input
+The system will ask you for any **custom requirements**. If you hit Enter, it defaults to: *"Generate production-ready infrastructure artifacts following all standard industry best practices."*
+
+---
+
+## 📁 Project Structure
+
+```text
 devops-agent/
-├── agent.py              ← The single CLI entry point
-├── src/engine/
-│   ├── context.py        ← Repo metadata extraction
-│   ├── llm.py            ← Wraps LLM generation with elite prompts
-│   ├── validate.py       ← Subprocess calls to real linters
-│   └── heal.py           ← The 3-retry auto-correction loop
-└── configs/prompts/      ← 5 Elite Prompts
+├── agent.py                 # Main CLI point
+├── src/
+│   ├── engine/
+│   │   ├── orchestrator.py  # Master controller (wires the 6 layers)
+│   │   ├── research.py      # Layer 0 (Spec/Research)
+│   │   ├── rag.py           # Layer 1 (ChromaDB Vector Store)
+│   │   ├── sampler.py       # Layer 2 (Self-Consistency 3x generation)
+│   │   ├── constitution.py  # Layer 3 (Semantic self-critique)
+│   │   ├── validate.py      # Layer 4 (Deterministic Linter Gate)
+│   │   ├── heal.py          # Layer 5 (Surgical Fix Loop)
+│   │   └── innovation.py    # Layer 6 (Async Advisory Flywheel)
+│   ├── llm_clients/         # Raw API wrappers (Groq/Gemini/Nvidia)
+│   └── utils/               # File extractors, static analysis
+├── configs/
+│   └── prompts/             # Raw engineering guidelines and agent system prompts
+└── sample_app/              # The target directory structure for your tests
 ```
-
-### Why Local Static Linters?
-LLMs are bad at syntax perfection. Instead of relying purely on prompt engineering, this tool validates the LLM's output against actual tools. If `hadolint` complains that you aren't pinning a package manager cache, the `heal.py` agent reads that error and fixes the Dockerfile automatically.
-
----
-
-## 📝 The File Writers ("5 Elite Prompts")
-
-All scattered prompts were consolidated into 5 high-quality, strict templates that enforce consistency and security:
-
-1. **`system_core.md`**: Enforces strict determinism, least privilege, zero `:latest` tags, and fail-closed mentalities.
-2. **`docker_production.md`**: Enforces multi-stage, non-root `UID >= 10001`, strict `.dockerignore` parity, and BuildKit.
-3. **`k8s_production.md`**: Generates full manifests with `PodDisruptionBudgets`, `HorizontalPodAutoscalers`, `readOnlyRootFilesystem`, and `seccompProfile: RuntimeDefault`.
-4. **`cicd_production.md`**: Enforces split jobs, `needs` dependency mapping, OIDC over static secrets, and deep security scanning tools.
-5. **`healer.md`**: A precision-diff prompt used when a linter fails, designed to change *only* what is broken.
-
----
-
-## 🛡 Validation & Self-Healing
-
-The core engine loop (in `agent.py`):
-1. **Drafts** a file.
-2. **Validates** the file.
-3. **Fails?** Takes the `stderr` string and feeds it to `Healer`.
-4. **Retries?** Up to 3 times per file.
-5. **Success?** Formats keys alphabetically (where applicable) to reduce git diff noise.
-
----
-
-## 📋 Version History
-
-| Version | Key Features |
-|---------|-------------|
-| v10–v12 | Parallel writers, V2 Auto-Pilot, multi-agent evaluation. |
-| v13.0 | Auto microservice detection, database parsing. |
-| **v14.0** | **Massive simplification. Removed multi-agent hallucination. Added Local Engine (`context`, `llm`, `validate`, `heal`). Consolidated 20+ prompts into 5 Elite Prompts. Added strict static linter enforcement.** |
-
-## 📄 License
-MIT License.

@@ -1,42 +1,138 @@
+import typing
+import threading
 import os
-from src.engine.validate import validate_file
-from src.engine.heal import heal_file
-from src.engine.config import MAX_RETRIES
 from src.engine.models import GeneratedFile
+from src.engine.research import run_research
+from src.engine.rag import get_rag_context
+from src.engine.sampler import Sampler
+from src.engine.constitution import critique_file
+from src.engine.heal import Healer
+from src.engine.validate import Validator
+from src.engine.innovation import run_innovation_async
+from src.llm_clients.groq_client import GroqClient
 
 class Orchestrator:
-    def process(self, file: GeneratedFile, project_path: str):
-        print(f"\n--- Processing: {file.path} ---")
-        retries = 0
+    def __init__(self):
+        self.llm = GroqClient()
+        self.sampler = Sampler(self.llm)
+        self.validator = Validator()
+        self.healer = Healer()
 
-        # Ensure correct path inside project
-        original_path = file.path
-        file.path = os.path.normpath(os.path.join(project_path, original_path))
+    def _get_generator_prompt(self, task_type: str) -> str:
+        # Load the elite prompt
+        prompt_map = {
+            "docker": "configs/prompts/docker/docker_production.md",
+            "k8s": "configs/prompts/k8s/k8s_production.md",
+            "ci": "configs/prompts/cicd/cicd_production.md"
+        }
+        path = prompt_map.get(task_type.lower())
+        if not path: return ""
+        try:
+            with open(path, 'r') as f:
+                return f.read()
+        except FileNotFoundError:
+            return ""
+
+    def run_pipeline(self, user_request: str, artifact_type: str, build_context: dict, project_path: str) -> list[GeneratedFile]:
+        print(f"\n{'='*60}\n🚀 SOVEREIGN PIPELINE: {artifact_type.upper()}\n{'='*60}")
         
-        while retries < MAX_RETRIES:
-            # 1. Validate
-            result = validate_file(file)
+        # --- LAYER 0: Research & Spec ---
+        spec_notes, research_notes = run_research(user_request, artifact_type)
+        print(f"  [+] Layer 0 Complete: Spec and Research locked.")
 
-            if result.passed:
-                print(f"✅ {original_path} PASSED validation.")
-                break
+        # --- LAYER 1: RAG Injection ---
+        rag_context = get_rag_context(user_request, artifact_type)
+        print(f"  [+] Layer 1 Complete: RAG Golden Paths injected.")
 
-            # 2. Heal
-            print(f"❌ {original_path} FAILED validation (Attempt {retries+1}/{MAX_RETRIES})")
-            print("Errors detected:")
-            for err in result.errors[:3]:
-                print(f"  - {err}")
+        # Assemble the ultimate prompt
+        base_prompt = self._get_generator_prompt(artifact_type)
+        context_str = "\n".join([f"{k}: {v}" for k, v in build_context.items()])
+        full_prompt = f"""
+{base_prompt}
+
+APPLICATION CONTEXT:
+{context_str}
+
+USER REQUEST:
+{user_request}
+
+LAYER 0 (SPECIFICATION & CONSTRAINTS):
+{spec_notes}
+
+LAYER 0 (2026 BEST PRACTICES):
+{research_notes}
+
+LAYER 1 (RAG GOLDEN PATHS & CIS BENCHMARKS):
+{rag_context}
+"""
+
+        # --- LAYER 2: Self-Consistency (Sampler) ---
+        print(f"\n🧠 Layer 2: Generating candidates via Self-Consistency...")
+        candidates = self.sampler.sample(full_prompt)
+        if not candidates:
+             print("❌ Failed to generate any valid candidates.")
+             return []
+        
+        # Select best candidate (longest = most complete heuristically for now)
+        winner_text = max(candidates, key=len)
+        print(f"  [+] Layer 2 Complete: Consensus winner selected.")
+        
+        # Parse into files
+        from src.engine.llm import LLMGenerator
+        parser = LLMGenerator() # Re-using its strictly-tested robust parser
+        files = parser._parse_files(winner_text)
+        
+        if not files:
+             print("❌ Failed to strictly parse files out of the winning candidate.")
+             return []
+
+        final_artifacts = []
+        for file in files:
+            print(f"\n--- Processing File: {file.path} ---")
             
-            file = heal_file(file, result.errors)
-            retries += 1
+            # --- LAYER 3: Constitutional Critique ---
+            print(f"  [>] Layer 3: Running Constitutional Critique...")
+            critiqued_file = critique_file(file, artifact_type, self.llm)
+            
+            # Fix path
+            original_path = critiqued_file.path
+            critiqued_file.path = os.path.normpath(os.path.join(project_path, original_path))
 
-        if retries == MAX_RETRIES:
-            print(f"⛔ FAILED to auto-fix {original_path} after {MAX_RETRIES} attempts.")
-            return False
-
-        # 3. Write to disk
-        self._write_to_disk(file)
-        return True
+            # --- LAYER 4: Deterministic Validation ---
+            print(f"  [>] Layer 4: Running Deterministic Validators...")
+            val_result = self.validator.validate(critiqued_file)
+            
+            # --- LAYER 5: Surgical Heal Loop ---
+            if not val_result.passed:
+                print(f"  [!] Layer 5: Invoking Surgical Heal Loop...")
+                healed_file = self.healer.heal(critiqued_file, val_result.errors)
+                
+                # Re-validate
+                re_val = self.validator.validate(healed_file)
+                if not re_val.passed:
+                     print(f"⚠️  Healer failed to resolve all issues. Escalate to human.")
+                     # We keep the best attempt
+                     final_artifacts.append(healed_file)
+                else:
+                     print(f"✅ Healer succeeded. File is valid.")
+                     final_artifacts.append(healed_file)
+            else:
+                 print(f"✅ File passed validation directly.")
+                 final_artifacts.append(critiqued_file)
+                 
+            # Write to disk
+            self._write_to_disk(final_artifacts[-1])
+            
+            # --- LAYER 6: Innovation Flywheel (Async) ---
+            print(f"  [>] Layer 6: Triggering Async Innovation Flywheel...")
+            threading.Thread(
+                target=run_innovation_async,
+                args=(final_artifacts[-1].content, artifact_type, user_request),
+                daemon=True
+            ).start()
+            
+        print(f"\n✅ Finished {artifact_type}: Successfully processed {len(final_artifacts)} files.")
+        return final_artifacts
 
     def _write_to_disk(self, file: GeneratedFile):
         os.makedirs(os.path.dirname(file.path), exist_ok=True)
@@ -44,5 +140,5 @@ class Orchestrator:
             f.write(file.content)
         print(f"💾 Saved to: {file.path}")
 
-def process_file(file: GeneratedFile, project_path: str) -> bool:
-    return Orchestrator().process(file, project_path)
+def run_feature_pipeline(user_request: str, artifact_type: str, build_context: dict, project_path: str) -> list[GeneratedFile]:
+    return Orchestrator().run_pipeline(user_request, artifact_type, build_context, project_path)

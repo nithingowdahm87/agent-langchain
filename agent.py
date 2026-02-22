@@ -8,9 +8,7 @@ load_dotenv()
 # Add src to python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from engine.context import extract_context
-from engine.llm import generate
-from engine.orchestrator import process_file
+from engine.orchestrator import run_feature_pipeline
 
 def print_header(title):
     print("\n" + "="*60)
@@ -18,7 +16,7 @@ def print_header(title):
     print("="*60)
 
 def main():
-    print_header("DevOps AI Agent Pipeline v14.0 [Solo-Copilot]")
+    print_header("DevOps AI Agent Pipeline v15.0 [Sovereign]")
     
     task_type = None
     if len(sys.argv) < 2:
@@ -60,6 +58,10 @@ def main():
     print("\n📦 Analyzing project architecture...")
     context_obj = load_or_run_analysis(project_path)
     context = context_obj.model_dump()
+    
+    user_request = input("\nEnter custom requirements (or press Enter for defaults): ").strip()
+    if not user_request:
+        user_request = "Generate production-ready infrastructure artifacts following all standard industry best practices."
 
     # Determine tasks to run
     tasks_to_run = [task_type] if task_type != 'all' else ['docker', 'k8s', 'ci']
@@ -67,21 +69,15 @@ def main():
     for current_task in tasks_to_run:
         print_header(f"Starting Stage: {current_task.upper()}")
         
-        # 2. Generate
-        print(f"🧠 Generating {current_task.upper()} infrastructure...")
-        generated_files = generate(current_task, context)
-
-        if not generated_files:
-            print(f"⚠️  LLM failed to generate {current_task} files. Skipping.")
-            continue
-
-        # 3. Process (Validate + Heal + Save)
-        success_count = 0
-        for file in generated_files:
-            if process_file(file, project_path):
-                success_count += 1
-
-        print(f"✅ Finished {current_task}: Successfully processed {success_count}/{len(generated_files)} files.")
+        request_context = f"Build {current_task} configurations. {user_request}"
+        
+        # Hand off to the Sovereign Orchestrator
+        run_feature_pipeline(
+            user_request=request_context,
+            artifact_type=current_task,
+            build_context=context,
+            project_path=project_path
+        )
 
     print("\n" + "*"*60)
     print("🎉 Pipeline Execution Completed Successfully!")
