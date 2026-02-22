@@ -2,6 +2,7 @@ from src.llm_clients.gemini_client import GeminiClient
 from src.llm_clients.groq_client import GroqClient
 from src.llm_clients.nvidia_client import NvidiaClient
 from src.tools.file_ops import read_file, write_file
+from src.utils.constants import GUIDELINES_K8S
 
 class K8sWriterA:
     def __init__(self):
@@ -59,7 +60,7 @@ class K8sReviewer:
         """
         # Load guidelines
         try:
-            guidelines = read_file("configs/guidelines/k8s-guidelines.md")
+            guidelines = read_file(GUIDELINES_K8S)
         except Exception:
             guidelines = "No specific guidelines available."
         

@@ -2,17 +2,12 @@ from src.llm_clients.gemini_client import GeminiClient
 from src.llm_clients.groq_client import GroqClient
 from src.llm_clients.nvidia_client import NvidiaClient
 from src.tools.file_ops import read_file, scan_directory, write_file
+from src.utils.constants import GUIDELINES_DOCKER
 
 class DockerWriterA:
     def __init__(self):
         self.llm = GeminiClient()
     
-    def generate(self, app_path: str, context: str = "") -> str:
-        tree = scan_directory(app_path)
-        try:
-            guidelines = read_file("configs/guidelines/docker-guidelines.md")
-        except Exception:
-            guidelines = "No specific guidelines found."
     def generate(self, context: str) -> str:
         try:
             system = read_file("configs/prompts/system_master.md")
@@ -66,7 +61,7 @@ class DockerReviewer:
         """
         # Load guidelines
         try:
-            guidelines = read_file("configs/guidelines/docker-guidelines.md")
+            guidelines = read_file(GUIDELINES_DOCKER)
         except Exception:
             guidelines = "No specific guidelines available."
         

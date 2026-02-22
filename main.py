@@ -19,7 +19,6 @@ from src.decision_engine.orchestrator import V2Orchestrator
 from src.agents.guidelines_compliance_agent import GuidelinesComplianceAgent
 from src.agents.docker_compose_agent import DockerComposeWriter, ComposeReviewer, DockerComposeExecutor
 from src.agents.cicd_agent import CIWriterA, CIWriterB, CIWriterC, CIReviewer, CIExecutor
-from src.agents.cicd_agent import CIWriterA, CIWriterB, CIWriterC, CIReviewer, CIExecutor
 from src.agents.cost_agent import CostEstimator, CostExecutor
 from src.agents.debugging_agent import DebugWriterA, DebugWriterB, DebugWriterC, DebugReviewer, DebugExecutor
 from src.llm_clients.gemini_client import GeminiClient
@@ -27,6 +26,7 @@ from src.llm_clients.groq_client import GroqClient
 from src.llm_clients.nvidia_client import NvidiaClient
 from src.utils.resilience import safe_llm_call
 from src.utils.sanitizer import sanitize_feedback
+from src.utils.constants import GUIDELINES_DOCKER, GUIDELINES_K8S, GUIDELINES_CI
 from src.utils.logger import get_logger, set_correlation_id, configure_logging
 from src.utils.parallel import run_writers_parallel
 from src.audit.decision_log import AuditLog
@@ -176,10 +176,10 @@ def stage_decision_loop(stage_name, reviewer, drafts, executor, run_executor_fn,
 
 
 # ================================================================
-# STAGE 2: Dockerfile
+# STAGE 3: Dockerfile
 # ================================================================
 def run_docker_stage(project_path, context: ProjectContext, audit, publisher=None, run_id="") -> StageResult:
-    print_header("Stage 2: Docker Infrastructure Generation")
+    print_header("Stage 3: Docker Infrastructure Generation")
     context_str = context.model_dump_json(indent=2)
     
     # Initialize
@@ -216,7 +216,7 @@ def run_docker_stage(project_path, context: ProjectContext, audit, publisher=Non
     return stage_decision_loop(
         stage_name="Docker", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
-        guidelines_path="configs/guidelines/docker-guidelines.md", audit=audit,
+        guidelines_path=GUIDELINES_DOCKER, audit=audit,
         det_reviewer=det_reviewer, det_fn=lambda r, d: r.review_dockerfile(d),
         publisher=publisher, output_files={"Dockerfile": None},
         project_path=project_path, run_id=run_id,
@@ -224,10 +224,10 @@ def run_docker_stage(project_path, context: ProjectContext, audit, publisher=Non
 
 
 # ================================================================
-# STAGE 3: Docker Compose
+# STAGE 4: Docker Compose
 # ================================================================
 def run_compose_stage(project_path, context: ProjectContext, audit, publisher=None, run_id="") -> StageResult:
-    print_header("Stage 3: Docker Compose Generation")
+    print_header("Stage 4: Docker Compose Generation")
     ctx_str = context.model_dump_json(indent=2)
     
     # Initialize
@@ -266,17 +266,17 @@ def run_compose_stage(project_path, context: ProjectContext, audit, publisher=No
     return stage_decision_loop(
         stage_name="Compose", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
-        guidelines_path="configs/guidelines/docker-guidelines.md", audit=audit,
+        guidelines_path=GUIDELINES_DOCKER, audit=audit,
         publisher=publisher, output_files={"docker-compose.yml": None},
         project_path=project_path, run_id=run_id,
     )
 
 
 # ================================================================
-# STAGE 4: Kubernetes Manifests
+# STAGE 5: Kubernetes Manifests
 # ================================================================
 def run_k8s_stage(project_path, context: ProjectContext, audit, publisher=None, run_id="") -> StageResult:
-    print_header("Stage 4: Kubernetes Manifests")
+    print_header("Stage 5: Kubernetes Manifests")
     ctx_str = context.model_dump_json(indent=2)
     service_name = context.project_name or 'myapp'
     
@@ -315,7 +315,7 @@ def run_k8s_stage(project_path, context: ProjectContext, audit, publisher=None, 
     return stage_decision_loop(
         stage_name="K8s", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, os.path.join(project_path, "k8s", "manifest.yaml")),
-        guidelines_path="configs/guidelines/k8s-guidelines.md", audit=audit,
+        guidelines_path=GUIDELINES_K8S, audit=audit,
         det_reviewer=det_reviewer, det_fn=lambda r, d: r.review_k8s(d),
         publisher=publisher, output_files={"k8s/manifest.yaml": None},
         project_path=project_path, run_id=run_id,
@@ -323,10 +323,10 @@ def run_k8s_stage(project_path, context: ProjectContext, audit, publisher=None, 
 
 
 # ================================================================
-# STAGE 5: CI (GitHub Actions)
+# STAGE 6: CI (GitHub Actions)
 # ================================================================
 def run_cicd_stage(project_path, context: ProjectContext, audit, publisher=None, run_id="") -> StageResult:
-    print_header("Stage 5: CI Generation (GitHub Actions)")
+    print_header("Stage 6: CI Generation (GitHub Actions)")
     ctx_str = context.model_dump_json(indent=2)
     
     # Initialize
@@ -359,7 +359,7 @@ def run_cicd_stage(project_path, context: ProjectContext, audit, publisher=None,
     return stage_decision_loop(
         stage_name="CI", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
-        guidelines_path="configs/guidelines/ci-guidelines.md", audit=audit,
+        guidelines_path=GUIDELINES_CI, audit=audit,
         publisher=publisher, output_files={".github/workflows/main.yml": None},
         project_path=project_path, run_id=run_id,
     )
@@ -399,6 +399,7 @@ def run_debug_stage(project_path, context: ProjectContext, audit, publisher=None
             line = input()
             if line.strip() == 'END':
                 break
+            lines.append(line)
         error_input = '\n'.join(lines)
     
     if not error_input.strip():
