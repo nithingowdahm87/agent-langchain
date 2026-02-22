@@ -200,27 +200,26 @@ class V2Orchestrator:
         print(f"\n--- Stage: {display_name} ---")
         
         # 1. Load Prompts
-        # We need to select the right prompt based on the plan.
-        # For simplicity, we stick to 'writer_a_generalist' for now, 
-        # or switch to 'writer_b_security' if observability is strict.
-        prompt_name = "writer_b_security" if plan.observability_level == "strict" else "writer_a_generalist"
-        # Fallback for CI/CD which might only have one
-        if stage_key == "cicd": prompt_name = "github_actions_unified"
-        if stage_key == "scan": prompt_name = "scan_config"
+        # Mapping to the new "Elite" prompt structure
+        prompt_map = {
+            "dockerfile": ("docker", "docker_production"),
+            "kubernetes": ("k8s", "k8s_production"),
+            "cicd": ("cicd", "cicd_production"),
+            "scan": ("debug", "healer"), # Simplified
+            "docker_compose": ("docker", "docker_production") # Use production docker prompt
+        }
         
-        # Directory names might differ slightly from stage keys
-        prompt_dir = stage_key
-        if stage_key == "docker_compose": 
-            prompt_dir = "compose"
-            prompt_name = "writer"  # There's no writer_a_generalist for compose
-            
+        prompt_dir, prompt_name = prompt_map.get(stage_key, (stage_key, "writer_a"))
+        
         try:
             template = load_prompt(prompt_dir, prompt_name)
-        except Exception:
-            # Fallback logic if specific prompt missing
-            template = load_prompt(stage_key, "writer_a_generalist")
-            if stage_key == "scan": template = load_prompt("security", "scan_config")
-            if stage_key == "docker_compose": template = load_prompt("compose", "writer")
+        except Exception as e:
+            logger.warning(f"Failed to load prompt {prompt_dir}/{prompt_name}: {e}. Falling back to elite defaults.")
+            # Final fallback to known elite prompts
+            if "docker" in stage_key: template = load_prompt("docker", "docker_production")
+            elif "k8s" in stage_key or "kubernetes" in stage_key: template = load_prompt("k8s", "k8s_production")
+            elif "ci" in stage_key: template = load_prompt("cicd", "cicd_production")
+            else: raise FileNotFoundError(f"Could not find any prompt for stage: {stage_key}")
             
         # Optional User Input for K8s & Dockerfile
         custom_instructions = ""

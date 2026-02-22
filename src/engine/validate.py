@@ -46,7 +46,10 @@ class Validator:
         
         code, out, err = run_cmd(["hadolint", tmp_path])
         if code != 0:
-            errors.append(f"HADOLINT ERROR:\n{out or err}")
+            if "No such file or directory" in err or "not found" in err:
+                print("⚠️  hadolint not installed. Skipping static analysis.")
+            else:
+                errors.append(f"HADOLINT ERROR:\n{out or err}")
         
         # 2. docker build (dry run / check) - too slow for local loop usually without a daemon
         # skip for now unless specifically requested.
@@ -62,7 +65,10 @@ class Validator:
 
         code, out, err = run_cmd(["kubeconform", "-strict", tmp_path])
         if code != 0:
-            errors.append(f"KUBECONFORM ERROR:\n{out or err}")
+            if "No such file or directory" in err or "not found" in err:
+                print("⚠️  kubeconform not installed. Skipping strict schema validation.")
+            else:
+                errors.append(f"KUBECONFORM ERROR:\n{out or err}")
 
         # Custom rules
         try:

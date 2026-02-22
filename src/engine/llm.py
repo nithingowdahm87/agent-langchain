@@ -1,11 +1,11 @@
 import os
 import re
-from src.llm_clients.gemini_client import GeminiClient
+from src.llm_clients.groq_client import GroqClient
 from src.engine.models import GeneratedFile
 
 class LLMGenerator:
     def __init__(self):
-        self.llm = GeminiClient()
+        self.llm = GroqClient()
         self.system_prompt = self._load_prompt("configs/prompts/system/system_core.md")
         
     def _load_prompt(self, filepath: str) -> str:
@@ -35,7 +35,20 @@ class LLMGenerator:
         full_prompt = f"{self.system_prompt}\n\n{task_prompt}\n\nAPPLICATION CONTEXT:\n{context_str}"
 
         print(f"🧠 Generating {task_type} files...")
-        response = self.llm.call(full_prompt)
+        try:
+            response = self.llm.call(full_prompt)
+        except Exception as e:
+            # Handle blocked/leaked API keys gracefully
+            if "RetryError" in type(e).__name__:
+                try:
+                    e = e.last_attempt.exception()
+                except Exception:
+                    pass
+            print(f"❌ API Error: {e}")
+            if "PERMISSION_DENIED" in str(e) or "403" in str(e) or "NOT_FOUND" in str(e):
+                print("⚠️  Your Google API key is expired, leaked, or the model is invalid for this key. Please check your .env file.")
+            return []
+            
         return self._parse_files(response)
 
     def _parse_files(self, response: str) -> list[GeneratedFile]:
