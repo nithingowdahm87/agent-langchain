@@ -2,10 +2,14 @@ import os
 import re
 from src.llm_clients.groq_client import GroqClient
 from src.engine.models import GeneratedFile
+from src.engine.sampler import Sampler
+from src.engine.constitution import Constitution
 
 class LLMGenerator:
     def __init__(self):
         self.llm = GroqClient()
+        self.sampler = Sampler(self.llm)
+        self.constitution = Constitution(self.llm)
         self.system_prompt = self._load_prompt("configs/prompts/system/system_core.md")
         
     def _load_prompt(self, filepath: str) -> str:
@@ -34,22 +38,26 @@ class LLMGenerator:
         context_str = "\n".join([f"{k}: {v}" for k, v in context.items()])
         full_prompt = f"{self.system_prompt}\n\n{task_prompt}\n\nAPPLICATION CONTEXT:\n{context_str}"
 
-        print(f"🧠 Generating {task_type} files...")
-        try:
-            response = self.llm.call(full_prompt)
-        except Exception as e:
-            # Handle blocked/leaked API keys gracefully
-            if "RetryError" in type(e).__name__:
-                try:
-                    e = e.last_attempt.exception()
-                except Exception:
-                    pass
-            print(f"❌ API Error: {e}")
-            if "PERMISSION_DENIED" in str(e) or "403" in str(e) or "NOT_FOUND" in str(e):
-                print("⚠️  Your Google API key is expired, leaked, or the model is invalid for this key. Please check your .env file.")
-            return []
+        print(f"🧠 Generating {task_type} candidates (Self-Consistency)...")
+        candidates = self.sampler.sample(full_prompt)
+        
+        if not candidates:
+             print("❌ Failed to generate any valid candidates.")
+             return []
+             
+        # Pick the most consistent candidate (for simplicity, we grab the first valid one if not doing real embedding scores here, but usually, you'd score. Let's pick the longest one as a simple heuristic for completeness)
+        winner_text = max(candidates, key=len)
+        
+        # Parse the winner into GeneratedFile objects
+        files = self._parse_files(winner_text)
+        
+        # Constitutional Critique
+        critiqued_files = []
+        for f in files:
+            cf = self.constitution.critique(f, task_type)
+            critiqued_files.append(cf)
             
-        return self._parse_files(response)
+        return critiqued_files
 
     def _parse_files(self, response: str) -> list[GeneratedFile]:
         files = []
