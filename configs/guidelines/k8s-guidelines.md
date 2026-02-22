@@ -1,25 +1,37 @@
 # Kubernetes Guidelines
 
-## General
-- All Pods must have CPU and memory requests and limits.
-- Use readiness and liveness probes where applicable.
-- Do not run containers as privileged or as root when avoidable.
-- Use labels: `app`, `component`, `environment`.
-- Prefer Deployment + Service; add Ingress only when needed.
+## Security
+- Pod-level securityContext: runAsNonRoot, fsGroup, seccompProfile: RuntimeDefault
+- Container-level securityContext: allowPrivilegeEscalation: false, drop ALL capabilities
+- readOnlyRootFilesystem: true — always add emptyDir volumes for /tmp and /var/run
+- Never run privileged containers or use hostNetwork / hostPID
+- Namespace must have Pod Security Standard label: enforce: restricted
+- Dedicated ServiceAccount per app, automountServiceAccountToken: false
 
-## NetworkPolicy
-- **Default Deny**: Implement a "default deny-all" policy for the namespace.
-- **Allow List**: Explicitly allow traffic between specific components (e.g., Frontend -> Backend -> DB).
-- **Egress**: Restrict egress traffic to necessary external services.
-- **Isolation**: Database pods should NOT accept traffic from the public internet.
+## Resources
+- CPU and memory requests AND limits mandatory on every container
+- Requests = limits for critical services (Guaranteed QoS)
 
-## RBAC (Role-Based Access Control)
-- **ServiceAccount**: Create a specific ServiceAccount for each app. Do NOT use `default`.
-- **Least Privilege**: Grant only necessary permissions via Role/RoleBinding.
-- **AutomountServiceAccountToken**: Set to `false` if the pod doesn't need API access.
+## Availability
+- Minimum 2 replicas for all production workloads
+- RollingUpdate: maxUnavailable: 0
+- preStop sleep hook required (sleep 15) for zero-downtime deploys
+- terminationGracePeriodSeconds >= 60
+- All three probes required: startupProbe, livenessProbe, readinessProbe
+- Liveness: slow failure (failureThreshold: 3, periodSeconds: 30)
+- Readiness: fast fail (failureThreshold: 2, periodSeconds: 10)
+- HPA: CPU target 70%, scaleDown stabilization 300s
+- PodDisruptionBudget: minAvailable: 1
+- TopologySpread across zones and nodes
 
-## Jobs vs Deployments
-- **Deployments**: For long-running stateless services (APIs, frontends).
-- **StatefulSets**: For stateful apps (Databases).
-- **Jobs**: For one-off tasks (DB migrations, batch processing).
-- **CronJobs**: For scheduled tasks (backups).
+## Networking
+- Default deny-all NetworkPolicy required in every namespace
+- DNS egress (UDP+TCP port 53) MUST be explicitly allowed — pods cannot start without it
+- Database pods must not accept traffic from public internet
+- No NodePort — ClusterIP only for services, Ingress or Istio for external traffic
+
+## Resource Types
+- Deployments  : long-running stateless services
+- StatefulSets : stateful apps (databases)
+- Jobs         : one-off tasks (migrations)
+- CronJobs     : scheduled tasks (backups)

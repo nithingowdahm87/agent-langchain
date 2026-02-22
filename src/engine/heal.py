@@ -17,11 +17,25 @@ class Healer:
         print(f"🚑 Healing {file.path}...")
         error_str = "\n".join(errors)
         
-        full_prompt = f"{self.prompt}\n\nBROKEN FILE:\n```\n{file.content}\n```\n\nERROR:\n{error_str}"
-        
+        full_prompt = f"""
+You are a Senior Patch Engineer.
+Fix the broken file based on the validation errors provided.
+
+RULES:
+- Minimal changes only.
+- Preserve existing formatting/style.
+- Return the ENTIRE file as raw text.
+- NO markdown blocks. NO backticks. NO explanations.
+
+BROKEN FILE:
+{file.content}
+
+VALIDATION ERRORS:
+{error_str}
+"""
         response = self.llm.call(full_prompt)
         
-        # Clean markdown formatting if returned
+        # Clean response (healer prompt says return raw text, but safety first)
         healed_content = response.strip()
         if healed_content.startswith("```"):
             lines = healed_content.splitlines()
@@ -30,5 +44,5 @@ class Healer:
                 
         return GeneratedFile(path=file.path, content=healed_content)
 
-def heal(file: GeneratedFile, errors: list[str]) -> GeneratedFile:
+def heal_file(file: GeneratedFile, errors: list[str]) -> GeneratedFile:
     return Healer().heal(file, errors)
