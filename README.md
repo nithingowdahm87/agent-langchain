@@ -1,6 +1,6 @@
-# 🚀 DevOps AI Agent Pipeline v12.0
+# 🚀 DevOps AI Agent Pipeline v13.0
 
-> A self-correcting, multi-agent DevOps platform that generates production-grade infrastructure files for any codebase — powered by 4 LLM providers working in parallel, with built-in policy enforcement, audit trails, and GitOps publishing.
+> A self-correcting, multi-agent DevOps platform that generates production-grade infrastructure files for any codebase — powered by 3 LLM providers working in parallel, with built-in policy enforcement, automatic microservice detection, and zero-pollution cleanup.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -10,100 +10,30 @@
 ## 📖 Table of Contents
 
 - [What Is This?](#-what-is-this)
-- [Architecture](#-architecture)
 - [Quick Start](#-quick-start)
+- [V2 Auto-Pilot](#-v2-auto-pilot-mode)
+- [Code Analysis Summary](#-code-analysis-summary)
 - [The Pipeline Stages](#-the-pipeline-stages)
 - [Production Features](#-production-features)
 - [Project Structure](#-project-structure)
 - [Configuration](#-configuration)
-- [Mock Mode](#-mock-mode-offline-testing)
-- [Troubleshooting](#-troubleshooting)
+- [Version History](#-version-history)
 
 ---
 
 ## 🤔 What Is This?
 
-Point this at **any codebase** and it generates everything you need for production deployment:
+Point this at **any codebase** and it automatically generates everything you need for production deployment — no config, no manual input for microservice paths.
 
-| Stage | Output | File Generated |
-|-------|--------|----------------|
-| 1 | Code Analysis | `.devops_context.json` |
-| 2 | Dockerfile | `Dockerfile` |
+| Stage | Output | Files Generated |
+|-------|--------|-----------------|
+| 1 | Code Analysis | *(in-memory, auto-cleaned)* |
+| 2 | Dockerfiles | `<service>/Dockerfile` per microservice |
 | 3 | Docker Compose | `docker-compose.yml` |
-| 4 | K8s Manifests | `manifest.yaml` |
-| 5 | CI/CD Workflows | `.github/workflows/main.yml` |
-| 6 | Monitoring Stack | `helm/monitoring/Chart.yaml` |
-| 7 | Incident Reports | `debug_reports/incident_*.md` |
-| 8 | Cost Estimate | `cost_estimate.md` |
+| 4 | K8s Manifests | `k8s/*.yaml` |
+| 5 | CI/CD Pipeline | `.github/workflows/main.yml` |
 
----
-
-## 🏗️ Architecture
-
-### The Core Engine (Every Stage)
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         YOUR CODEBASE                                │
-└──────────────────────────┬───────────────────────────────────────────┘
-                           │
-                           ▼
-              ┌────────────────────────┐
-              │  Stage 1: Code Analysis │ ──► .devops_context.json
-              └────────────┬───────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-  ┌───────────┐     ┌───────────┐     ┌───────────┐
-  │ Writer A  │     │ Writer B  │     │ Writer C  │
-  │ (Gemini)  │     │ (Groq)    │     │ (NVIDIA)  │
-  │ General   │     │ Security  │     │ Speed     │
-  └─────┬─────┘     └─────┬─────┘     └─────┬─────┘
-        │                  │                  │
-        │    ⚡ Parallel via asyncio.to_thread │
-        └──────────────────┼──────────────────┘
-                           │
-                           ▼
-              ┌────────────────────────┐
-              │  Deterministic Linting  │  ◄── Hadolint / Kubeval
-              └────────────┬───────────┘
-                           │
-                           ▼
-              ┌────────────────────────┐
-              │  AI Reviewer           │  ◄── Perplexity (sonar-pro)
-              │  Merges best of 3      │
-              └────────────┬───────────┘
-                           │
-                           ▼
-              ┌────────────────────────┐
-              │  🛡️  Policy Gate        │  ◄── OPA/Conftest + Built-in Rules
-              │  Docker: no :latest    │
-              │  K8s: resource limits  │
-              │  CI: pin actions       │
-              └────────────┬───────────┘
-                           │
-                           ▼
-              ┌────────────────────────┐
-              │  👤 Human Decision     │  ◄── Approve / Refine / Reject
-              │  (up to 3 cycles)      │
-              └────────────┬───────────┘
-                           │ (approved)
-                           ▼
-              ┌────────────────────────┐
-              │  🚀 GitOps Publisher    │  ◄── PR via GitHub API
-              │  OR local file write   │      or local write (default)
-              └────────────────────────┘
-```
-
-### LLM Provider Map
-
-| Role | Provider | Model | Env Variable |
-|------|----------|-------|-------------|
-| Writer A (General) | Google Gemini | gemini-flash | `GOOGLE_API_KEY` |
-| Writer B (Security) | Groq | llama-3.3-70b | `GROQ_API_KEY` |
-| Writer C (Speed) | NVIDIA NIM | mixtral-8x7b | `NVIDIA_API_KEY` |
-| Reviewer (Judge) | Perplexity | sonar-pro | `PPLX_API_KEY` |
-| Fallback | Local MockClient | — | *(no key needed)* |
+> **Zero pollution**: `.devops_context.json` and `.devops_memory.json` are auto-deleted after the pipeline completes or exits.
 
 ---
 
@@ -124,153 +54,217 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env with your API keys
-source .env
+# Fill in GOOGLE_API_KEY, GROQ_API_KEY, NVIDIA_API_KEY
 ```
 
-> **💡 No API keys?** The system auto-falls back to **Mock Mode** — see [Mock Mode](#-mock-mode-offline-testing).
+> **No API keys?** The system auto-falls back to **Mock Mode** — full pipeline runs with placeholder content.
 
 ### 3. Run
 
 ```bash
-python3 main.py
+./run_agent.sh
 ```
 
-```
-============================================================
-🚀 DevOps AI Agent Pipeline v12.0
-============================================================
-Enter project path: /path/to/your/app
+Select **`1` → Auto-Pilot (V2)** to generate all DevOps artifacts automatically.
 
-8. [Cost]          Cloud Cost Estimation
-0. Exit
-Run Stage: _
+---
+
+## 🧠 V2 Auto-Pilot Mode
+
+The V2 pipeline is fully automated — no manual directory input required.
+
 ```
+Enter project path: /your/app
+
+--- Stage: Dockerfile ---       ← auto-detects backend/ and frontend/
+--- Stage: Docker Compose ---   ← 3 LLMs compete, best draft wins
+--- Stage: Kubernetes ---       ← generates per-resource YAML files
+--- Stage: CI Pipeline ---      ← DevSecOps-grade GitHub Actions
+```
+
+### How It Works
+
+```
+YOUR CODEBASE
+     │
+     ▼
+┌─────────────────────────┐
+│  CodeAnalysisAgent       │  Scans dirs, detects services, tech, ports, DBs
+└─────────────┬───────────┘
+              │
+     ┌────────┼────────┐
+     ▼        ▼        ▼
+  Gemini    Groq    NVIDIA      ← 3 writers run in parallel (ThreadPoolExecutor)
+     └────────┼────────┘
+              │
+     ┌────────▼────────┐
+     │  Evaluator       │  Content-based heuristic scoring (security + best-practices)
+     └────────┬────────┘
+              │
+     ┌────────▼────────┐
+     │  Confidence Gate │  Auto-approve (≥80%) or recommend review (<80%)
+     └────────┬────────┘
+              │
+     ┌────────▼────────┐
+     │  File Writer     │  Writes FILENAME: blocks to correct paths
+     └─────────────────┘
+```
+
+### LLM Provider Map
+
+| Role | Provider | Model |
+|------|----------|-------|
+| Writer A (General) | Google Gemini | `gemini-1.5-flash` |
+| Writer B (Security) | Groq | `llama-3.3-70b-versatile` |
+| Writer C (Speed) | NVIDIA NIM | `mixtral-8x22b` |
+| Fallback | MockClient | *(no key needed)* |
+
+---
+
+## 📋 Code Analysis Summary
+
+Every run prints a rich analysis block before generating anything:
+
+```
+================================================================
+  📋  CODE ANALYSIS SUMMARY
+================================================================
+  📁  Project       : sample_app
+  🏛️   Architecture  : Microservices
+  🐳  Dockerfiles   : 2 file(s) will be generated
+  🔌  Port chain    : :3000  →  :5432  →  :5173
+
+  ── MICROSERVICES ──────────────────────────────────────────────
+  #1  backend/  —  REST API Server + DB Layer
+       Language    : Node.js · Express
+       Runtime     : Node.js 20
+       Base image  : node:20-alpine
+       Port chain  : :3000  →  :5432
+       Key deps    : cors, dotenv, express, pg
+       Uses DBs    : PostgreSQL
+
+  #2  frontend/  —  Frontend Web App (SPA)
+       Language    : Node.js · React · Vite
+       Runtime     : Node.js 20
+       Base image  : node:20-alpine → nginx:alpine (runtime)
+       Port chain  : :5173
+       Key deps    : react, react-dom
+
+  ── DATABASES ────────────────────────────────────────────────
+  🗄️   RDBMS   PostgreSQL            ← #1 backend
+  ⚡  Cache   Redis                  ← #1 backend
+  🍃  NoSQL   MongoDB                ← #2 worker
+  📨  Broker  Kafka                  ← #3 events
+
+================================================================
+```
+
+### What Gets Auto-Detected Per Service
+
+| Field | How It's Detected |
+|-------|-------------------|
+| Role | Inferred from frameworks + deps + folder name |
+| Language / Runtime | `package.json` engines, `.nvmrc`, `.python-version` |
+| Base Image | Framework-appropriate (e.g. frontend → multi-stage with nginx) |
+| Port chain | Scanned from `.js`/`.ts` source + `vite.config.js` |
+| Databases | All prod deps matched against 30+ DB patterns |
+
+### Supported Service Roles (Auto-Inferred)
+
+`REST API Server + DB Layer` · `Frontend Web App (SPA)` · `Backend Worker / Message Consumer` · `API Gateway / Reverse Proxy` · `Authentication Service` · `Notification Service` · `Django Web Application` · `Python FastAPI Service` · more
+
+### Supported Database Detection (30+)
+
+| Category | Detected |
+|----------|---------|
+| 🗄️ RDBMS | PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, MS SQL Server, Oracle DB |
+| ✦ ORM | Sequelize, TypeORM, Prisma, Knex, SQLAlchemy, Alembic |
+| ⚡ Cache | Redis, Dragonfly, Valkey, KeyDB, Memcached |
+| 🍃 NoSQL | MongoDB, Cassandra, Elasticsearch, OpenSearch, DynamoDB, Firestore, Firebase, CouchDB, Neo4j, InfluxDB, TimescaleDB, ArangoDB |
+| 📨 Broker | Kafka, RabbitMQ, NATS, Bull/BullMQ, Celery |
 
 ---
 
 ## 🔄 The Pipeline Stages
 
-### Stage 1: Code Analysis *(Automatic)*
+### Stage 1: Code Analysis *(Automatic, Cached)*
 
-Scans your codebase and creates `.devops_context.json` — the shared brain read by all other stages.
+Scans your project on first run and caches results. Detects:
+- Language, frameworks, runtime versions
+- All microservice directories + their individual tech stacks
+- Ports from source code scanning
+- Databases categorized by type (RDBMS / Cache / NoSQL / Broker)
+- Environment variables, existing DevOps files
 
-**Detects:** Language, framework, ports, env vars, dependencies, package manager.
+### Stage 2: Dockerfile *(Auto-Injected)*
 
-> Delete `.devops_context.json` to force a rescan.
+For microservice projects, the correct subdirectory paths are **automatically** injected into the prompt — no manual input needed.
 
-### Stage 2: Dockerfile
+**Production-Grade Rules (20):** multi-stage builds, non-root user, pinned base images, no `:latest`, cache hygiene, `HEALTHCHECK`, exec-form `CMD`, OCI labels, no secrets in layers, `.dockerignore` enforced.
 
-3 writers generate competing Dockerfiles → AI reviewer merges the best → Hadolint validates
-3- **🧠 V2 Decision Engine**: Deterministic architecture planning, multi-model consensus, and auto-repair loops.
-- **🛡️ Security-First**: Generated artifacts (Dockerfiles, K8s manifests) adhere to strict security baselines (non-root, pinned versions).
-- **🔧 Self-Healing**: Automated error detection and retry logic for LLM calls and validation failures.
-- **🏗️ Microservices Support**: Automatically detects and handles complex microservice architectures. → Policy checks (no `:latest`, `USER` required, `HEALTHCHECK`) → You approve.
+Output: `backend/Dockerfile`, `frontend/Dockerfile` (per detected service)
 
 ### Stage 3: Docker Compose
 
-Generates `docker-compose.yml` with service definitions. Auto-detects databases (MongoDB, Redis, PostgreSQL) from your dependencies.
+3 LLM writers generate competing `docker-compose.yml` drafts. The highest-scoring draft (content-based heuristics) is selected. You approve or edit.
 
 ### Stage 4: Kubernetes Manifests
 
-Generates `Deployment` + `Service` YAML → Kubeval validates schema → Policy checks (resource limits, namespace, probes) → You approve.
+Each K8s resource (Deployment, Service, Ingress, ConfigMap, Secrets, Namespace) is output as a **separate file** in `k8s/`.
 
-### Stage 5: CI/CD (GitHub Actions)
+### Stage 5: CI Pipeline
 
-3 perspectives (general CI, DevSecOps, speed-optimized) merged into a single `.github/workflows/main.yml`. Policy checks ensure actions are pinned.
-
-### Stage 6: Observability (Helm)
-
-Generates a Helm chart with Prometheus, Loki, and Grafana as dependencies.
-
-### Stage 7: Debugging
-
-### Stage 8: Cloud Cost Estimation (FinOps)
-
-Analyzes generated manifests to estimate monthly cloud spend (AWS/GCP/Azure) for compute, storage, and networking.
+Generates `.github/workflows/main.yml` with:
+- Test → Build → Security scan → Deploy stages
+- Pinned action versions (policy-enforced)
+- Docker image caching
+- Multi-environment support
 
 ---
 
 ## 🏭 Production Features
 
-### Phase 2: Security Hardening
+### Confidence Scoring
 
-| Feature | Module | What It Does |
-|---------|--------|-------------|
-| **Secrets Management** | `src/utils/secrets.py` | AWS Secrets Manager → HashiCorp Vault → env var fallback |
-| **Retry + Backoff** | `src/utils/resilience.py` | 3 retries with exponential backoff on all LLM calls |
-| **Input Sanitization** | `src/utils/sanitizer.py` | Strips prompt injection patterns and shell metacharacters |
-| **Dependency Locking** | `requirements.in` | Source file for `pip-compile` reproducible builds |
+Every generated artifact gets a real content-based score:
 
-### Phase 3: Auditability & Performance
+| Check | Points |
+|-------|--------|
+| Non-root user (`USER`/`adduser`) | +15 |
+| No `:latest` image tags | +10 |
+| Cache cleaned (`--no-cache`) | +10 |
+| No secrets in image | +5 |
+| Multi-stage build (`AS builder`) | +15 |
+| `WORKDIR` set | +10 |
+| Exec-form `CMD` | +10 |
+| OCI labels | +5 |
+| Model agreement bonus (2+ models agree) | +up to 20 |
 
-| Feature | Module | What It Does |
-|---------|--------|-------------|
-| **Structured Logging** | `src/utils/logger.py` | JSON logs (production) or emoji console (dev). Set `LOG_JSON=true` |
-| **Correlation IDs** | `src/utils/logger.py` | Every run gets a unique 8-char ID visible in all logs |
-| **Parallel Writers** | `src/utils/parallel.py` | All 3 writers run concurrently via `asyncio.to_thread` (~3x speedup) |
-| **Audit Trail** | `src/audit/decision_log.py` | Every approve/refine/reject saved to `audit_logs/<run_id>.json` |
+**Score ≥ 80% → AUTO_APPROVE. Score < 80% → RECOMMEND_DRAFT (human review).**
 
-### Phase 4: GitOps & Policy Enforcement
-
-| Feature | Module | What It Does |
-|---------|--------|-------------|
-| **GitOps PR Model** | `src/gitops/pr_creator.py` | On approve → creates branch + PR via GitHub API. Falls back to local writes |
-| **Policy Engine** | `src/policy/validator.py` | Built-in rules (always run) + OPA/Conftest (when installed) |
-| **Rego Policies** | `policies/docker/`, `policies/k8s/`, `policies/ci/` | Declarative policy-as-code for each stage |
-
-#### Policy Rules
+### Policy Enforcement
 
 | Stage | Built-in Rules |
-|-------|---------------|
-| Docker | No `:latest` tags, `USER` required, `HEALTHCHECK` recommended, prefer `COPY` over `ADD` |
-| K8s | Resource limits required, no `default` namespace, probes required, no privileged containers |
-| CI/CD | Pin action versions, warn on `pull_request_target`, require job timeouts |
+|-------|----------------|
+| Docker | No `:latest`, `USER` required, `HEALTHCHECK` recommended |
+| K8s | Resource limits required, no `default` namespace, probes required |
+| CI/CD | Pin action versions, require job timeouts |
 
-#### Enabling GitOps Mode
+### Secret Management
 
-```bash
-# In .env — approved artifacts become PRs instead of local files
-GITHUB_TOKEN=your_personal_access_token
-GITHUB_REPO=owner/repo
-GITHUB_BASE_BRANCH=main   # optional, defaults to main
+```
+AWS Secrets Manager → HashiCorp Vault → Environment Variable
 ```
 
-### Phase 8: Production-Grade Prompts (v8.0)
+### GitOps Mode
 
-| Feature | Details |
-|---------|---------|
-| **Prompt Library** | Externalized prompts in `configs/prompts/` |
-| **Role Personas** | Enforces "Senior DevOps" constraints (Non-root, ReadOnly FS) |
-| **Istio Support** | K8s agents now generate VirtualService/Gateway resources |
+```bash
+# .env
+GITHUB_TOKEN=your_token
+GITHUB_REPO=owner/repo
+```
 
-### Phase 9: FinOps (v9.0)
-
-| Feature | Details |
-|---------|---------|
-| **Cost Awareness** | Estimates monthly spend for generated infrastructure |
-| **Resource Logic** | Maps CPU/RAM requests to standard cloud instances |
-
-### Phase 10: Self-Healing (v10.0)
-
-| Feature | Details |
-|---------|---------|
-| **Auto-Fix** | `SelfHealer` agent applies patches to broken code |
-| **Integration** | Seamlessly available in `Debug` stage after RCA |
-
-### Phase 11: Output Organization (v11.0)
-
-| Feature | Details |
-|---------|---------|
-| **Clean Structures** | Groups artifacts into `k8s/` and `cost/` folders |
-| **Context Aware** | Keeps Dockerfiles in build roots for valid contexts |
-
-### Phase 12: Enhanced Analysis (v12.0)
-
-| Feature | Details |
-|---------|---------|
-| **Smart Detection** | Identifies microservices, cloud SDKs, and existing DevOps files |
-| **Interactive** | Reports findings at startup & asks to Keep or Overwrite |
+Approved artifacts are opened as GitHub PRs instead of local writes.
 
 ---
 
@@ -278,81 +272,57 @@ GITHUB_BASE_BRANCH=main   # optional, defaults to main
 
 ```
 devops-agent/
-├── main.py                              # Entry point (v5.0)
-├── requirements.in                      # pip-compile source
-├── requirements.txt                     # Python dependencies
-├── .env.example                         # All env vars documented
-├── validate_keys.py                     # API key validator
+├── run_agent.sh                          # One-command launcher (recommended)
+├── main.py                               # Entry point
+├── requirements.txt
+├── .env.example
 │
 ├── src/
-│   ├── agents/                          # 🤖 Pipeline stage agents
-│   │   ├── code_analysis_agent.py           # Stage 1: scans codebase
-│   │   ├── docker_agents.py                 # Stage 2: Dockerfile
-│   │   ├── docker_compose_agent.py          # Stage 3: Compose
-│   │   ├── k8s_agents.py                    # Stage 4: K8s manifests
-│   │   ├── cicd_agent.py                    # Stage 5: GitHub Actions
-│   │   ├── observability_agent.py           # Stage 6: Helm charts
-│   │   ├── debugging_agent.py               # Stage 7: Incident analysis
-│   │   ├── deterministic_reviewer.py        # Hadolint + Kubeval
-│   │   └── guidelines_compliance_agent.py   # Auto-learning quality gate
+│   ├── agents/
+│   │   ├── code_analysis_agent.py        # Per-service detection, DB categorization
+│   │   ├── cicd_agent.py
+│   │   └── ...
 │   │
-│   ├── llm_clients/                     # 🌐 LLM provider wrappers
-│   │   ├── gemini_client.py                 # Google Gemini
-│   │   ├── groq_client.py                   # Groq / LLaMA
-│   │   ├── nvidia_client.py                 # NVIDIA NIM
-│   │   ├── perplexity_client.py             # Perplexity AI
-│   │   └── mock_client.py                   # Offline testing
+│   ├── decision_engine/
+│   │   ├── orchestrator.py               # V2 pipeline, rich summary, auto-cleanup
+│   │   ├── planner.py                    # Architecture planning
+│   │   ├── evaluator.py                  # Best-draft selector
+│   │   ├── confidence/
+│   │   │   └── confidence_score.py       # Heuristic content scoring
+│   │   └── generator/
+│   │       └── llm_generator.py          # Parallel LLM writer
 │   │
-│   ├── utils/                           # 🔧 Production utilities
-│   │   ├── secrets.py                       # Multi-backend secrets
-│   │   ├── resilience.py                    # Retry + backoff
-│   │   ├── sanitizer.py                     # Input sanitization
-│   │   ├── logger.py                        # Structured JSON logging
-│   │   └── parallel.py                      # Async parallel execution
+│   ├── llm_clients/
+│   │   ├── gemini_client.py              # gemini-1.5-flash
+│   │   ├── groq_client.py
+│   │   ├── nvidia_client.py
+│   │   └── mock_client.py
 │   │
-│   ├── audit/                           # 📋 Compliance
-│   │   └── decision_log.py                  # Per-run audit trail
-│   │
-│   ├── gitops/                          # 🚀 GitOps publishing
-│   │   └── pr_creator.py                    # GitHub PR creator
-│   │
-│   ├── policy/                          # 🛡️ Policy engine
-│   │   └── validator.py                     # Built-in + Conftest
-│   │
-│   └── tools/                           # File/shell helpers
-│       ├── file_ops.py
-│       ├── context_gatherer.py
-│       └── shell_tools.py
+│   ├── schemas.py                        # Pydantic models (ProjectContext)
+│   └── utils/
+│       ├── prompt_loader.py              # Safe template rendering (no KeyError)
+│       ├── secrets.py
+│       └── logger.py
 │
-├── policies/                            # OPA Rego policies
-│   ├── docker/dockerfile.rego
-│   ├── k8s/manifests.rego
-│   └── ci/workflow.rego
-│
-├── configs/guidelines/                  # Auto-learning best practices
-│   ├── docker-guidelines.md
-│   ├── k8s-guidelines.md
-│   └── ci-guidelines.md
-│
-└── bin/                                 # Deterministic validators
-    ├── hadolint
-    └── kubeval
+└── configs/
+    └── prompts/
+        ├── dockerfile/
+        │   ├── writer_a_generalist.md    # 20-rule production Dockerfile spec
+        │   └── writer_b_security.md
+        ├── docker_compose/
+        ├── kubernetes/
+        └── cicd/
 ```
 
 ---
 
 ## ⚙️ Configuration
 
-### Environment Variables
-
-Copy `.env.example` to `.env` and configure:
-
 ```bash
-# Required (for live mode)
+# Required (for live generation)
 GOOGLE_API_KEY=...
 GROQ_API_KEY=...
 NVIDIA_API_KEY=...
-PPLX_API_KEY=...
 
 # Optional: GitOps PR mode
 GITHUB_TOKEN=...
@@ -360,105 +330,27 @@ GITHUB_REPO=owner/repo
 
 # Optional: Secrets backends
 AWS_REGION=ap-south-1
-DEVOPS_AGENT_SECRET_NAME=devops-agent/llm-keys
 VAULT_ADDR=https://vault.example.com
 VAULT_TOKEN=...
 
 # Optional: Logging
-LOG_JSON=true   # JSON output for production
-```
-
-### Guidelines (Auto-Learning)
-
-Guidelines in `configs/guidelines/` teach the AI best practices. The `GuidelinesComplianceAgent` automatically learns from AI reviewer reasoning and appends new best practices discovered during reviews.
-
-### Installing Conftest (Optional)
-
-For OPA Rego policy enforcement beyond built-in rules:
-
-```bash
-# macOS
-brew install conftest
-
-# Linux
-wget https://github.com/open-policy-agent/conftest/releases/download/v0.46.0/conftest_0.46.0_Linux_x86_64.tar.gz
-tar xzf conftest_0.46.0_Linux_x86_64.tar.gz
-sudo mv conftest /usr/local/bin/
-```
-
-> Without conftest, built-in policy rules still run. Conftest adds deeper, declarative Rego-based validation.
-
----
-
-## 🧪 Mock Mode (Offline Testing)
-
-If API keys are missing, the system **auto-falls back** to `MockClient`:
-
-- ✅ Full pipeline flow works
-- ✅ All menu options functional
-- ✅ Files generated with realistic placeholder content
-- ⚠️ Output is pre-defined mock data, not AI-generated
-
-**How to force Mock Mode:** Don't set API keys. The system prints:
-```
-⚠️ API Keys missing. Using MOCK clients.
-```
-
----
-
-## 🔧 Troubleshooting
-
-### "GOOGLE_API_KEY environment variable is not set"
-
-```bash
-source .env
-echo $GOOGLE_API_KEY  # verify it's set
-```
-
-### "ModuleNotFoundError: No module named 'langchain_google_genai'"
-
-```bash
-pip install -r requirements.txt
-```
-
-### Cache is stale / wrong language detected
-
-```bash
-rm /path/to/your/app/.devops_context.json
-```
-
-### Hadolint/Kubeval not found
-
-The system gracefully skips linting and continues with AI-only review. To install:
-
-```bash
-# Hadolint
-wget -O bin/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
-chmod +x bin/hadolint
-
-# Kubeval
-wget https://github.com/instrumenta/kubeval/releases/download/v0.16.1/kubeval-linux-amd64.tar.gz
-tar xf kubeval-linux-amd64.tar.gz -C bin/
-chmod +x bin/kubeval
+LOG_JSON=true
 ```
 
 ---
 
 ## 📊 Version History
 
-| Version | Codename | Key Features |
-|---------|----------|-------------|
-| v1.0 | — | Basic single-writer pipeline |
-| v2.0 | — | Multi-writer + reviewer pattern |
-| v3.0 | — | 7 stages + refinement loop + deterministic validation |
-| v4.0 | Auditable | Structured logging, parallel writers, audit trail |
-| v6.0 | **Runtime** | K8s Jobs, NetworkPolicy, RBAC added |
-| v7.0 | **Ops** | Grafana Dashboards & Monitoring Stack |
-| v8.0 | **Pro Prompts** | Externalized Prompt Library + Role Personas |
-| v9.0 | **FinOps** | Cloud Cost Estimation Agent |
-| v10.0 | **Self-Healing** | Auto-Fix capabilities in Debug Stage |
-| v11.0 | **Organized** | Clean output structure (`k8s/`, `cost/`) |
-| v12.0 | **Auto-Pilot** | V2 Decision Engine, Real/Mock Mode switching, 8-stage DevSecOps Pipeline |
+| Version | Key Features |
+|---------|-------------|
+| v1–v3 | Single-writer pipeline → multi-writer + reviewer |
+| v4.0 | Parallel writers, audit trail, structured logging |
+| v6–v8 | K8s RBAC/NetworkPolicy, Helm monitoring, externalized prompts |
+| v9.0 | Cloud cost estimation (FinOps) |
+| v10.0 | Self-healing / auto-fix agent |
+| v11.0 | Output organized into `k8s/`, `cost/` folders |
+| v12.0 | V2 Decision Engine, Auto-Pilot mode, 8-stage DevSecOps pipeline |
+| **v13.0** | **Auto microservice detection, per-service DB/port/role analysis, rich code analysis summary, 30+ DB types, heuristic confidence scoring, Gemini fix, zero-pollution auto-cleanup** |
 
 ---
 

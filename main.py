@@ -323,10 +323,10 @@ def run_k8s_stage(project_path, context: ProjectContext, audit, publisher=None, 
 
 
 # ================================================================
-# STAGE 5: CI/CD (GitHub Actions)
+# STAGE 5: CI (GitHub Actions)
 # ================================================================
 def run_cicd_stage(project_path, context: ProjectContext, audit, publisher=None, run_id="") -> StageResult:
-    print_header("Stage 5: CI/CD Generation (GitHub Actions)")
+    print_header("Stage 5: CI Generation (GitHub Actions)")
     ctx_str = context.model_dump_json(indent=2)
     
     # Initialize
@@ -347,17 +347,17 @@ def run_cicd_stage(project_path, context: ProjectContext, audit, publisher=None,
     executor = CIExecutor()
     
     # Generate in parallel
-    logger.info("Generating drafts in parallel", extra={"stage": "CI/CD"})
+    logger.info("Generating drafts in parallel", extra={"stage": "CI"})
     print("Drafting Workflows in parallel (Gemini, Groq, NVIDIA)...")
     drafts = run_writers_parallel(
         writers=[(wa, "Gemini"), (wb, "Groq"), (wc, "NVIDIA")],
         generate_fn=lambda w, ctx: w.generate(ctx),
         context=ctx_str,
-        stage="CI/CD",
+        stage="CI",
     )
     
     return stage_decision_loop(
-        stage_name="CI/CD", reviewer=reviewer, drafts=drafts,
+        stage_name="CI", reviewer=reviewer, drafts=drafts,
         executor=executor, run_executor_fn=lambda final: executor.run(final, project_path),
         guidelines_path="configs/guidelines/ci-guidelines.md", audit=audit,
         publisher=publisher, output_files={".github/workflows/main.yml": None},
@@ -530,7 +530,7 @@ def run_manual_menu(project_path, context, audit, publisher, run_id):
         print("3. [Docker]        Generate Dockerfile")
         print("4. [Compose]       Generate Docker Compose")
         print("5. [K8s]           Generate Kubernetes Manifests")
-        print("6. [CI/CD]         Generate GitHub Actions")
+        print("6. [CI]            Generate GitHub Actions")
         print("7. [Debug]         Troubleshoot Errors")
         print("8. [Cost]          Cloud Cost Estimation")
         print("b. Back to Main Menu")
@@ -624,8 +624,8 @@ def main():
     
     while True:
         print("\n--- DevOps AI Agent (v12.0) ---")
-        print("1. 🧠  Auto-Pilot (Recommended) [V2 Decision Engine]")
-        print("2. 🛠️   Manual Tools / Legacy Mode")
+        print("1. 🧠  Start Automated DevOps Generation (Auto-Pilot / V2)")
+        print("2. 🛠️   Run Specific Stages Manually (Legacy)")
         print("q. Exit")
         
         choice = input("Select: ").strip().lower()
@@ -646,6 +646,14 @@ def main():
     print(f"\n📝 Audit log saved: {audit_path}")
     print(audit.summary())
     logger.info("Pipeline completed", extra={"stage": "exit"})
+
+    # Clean up DevOps context caching footprint on graceful exit
+    for f in [".devops_context.json", ".devops_memory.json"]:
+        fpath = os.path.join(project_path, f)
+        if os.path.exists(fpath):
+            try: os.remove(fpath)
+            except Exception: pass
+
 
 if __name__ == "__main__":
     main()

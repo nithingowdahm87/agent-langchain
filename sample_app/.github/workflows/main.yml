@@ -49,7 +49,7 @@ jobs:
 
       # Step 4: SonarQube SAST
       - name: SonarQube SAST
-        uses: sonarcloud/sonarcloud-github-action@v2
+        uses: sonarcloud/sonarcloud-github-action@v1.12.0
         with:
           # Parallel analysis per microservice (individual SONAR_TOKEN)
           sonar-token: ${{ secrets.SONAR_TOKEN }}
@@ -63,7 +63,7 @@ jobs:
         uses: zaproxy/action-zap@v0.2.1
         with:
           # Dynamic scan on staging URL/OpenAPI (parallel per service)
-          zap-url: https://staging.example.com
+          zap-url: ${{ secrets.STAGING_URL }}
           zap-api-key: ${{ secrets.ZAP_API_KEY }}
         needs: sonar
 
@@ -101,23 +101,23 @@ jobs:
             Branch: ${{ github.branch }}
             Commit SHA: ${{ github.sha }}
             Job Status: ${{ job.status }}
-        # Use dawidd6/action-send-mail@v6 for Email
-        # uses: dawidd6/action-send-mail@v6
-        # with:
-        #   mail-server: ${{ secrets.MAIL_SERVER }}
-        #   mail-username: ${{ secrets.MAIL_USERNAME }}
-        #   mail-password: ${{ secrets.MAIL_PASSWORD }}
-        #   mail-to: ${{ secrets.MAIL_TO }}
-        #   mail-subject: ${{ github.repository }} - ${{ job.status }}
-        #   mail-body: |
-        #     Repository: ${{ github.repository }}
-        #     Branch: ${{ github.branch }}
-        #     Commit SHA: ${{ github.sha }}
-        #     Job Status: ${{ job.status }}
+        # Use specific version tags for all actions
+        uses: dawidd6/action-send-mail@v6
+        with:
+          # Send email notification
+          to: ${{ secrets.EMAIL_TO }}
+          from: ${{ secrets.EMAIL_FROM }}
+          subject: ${{ github.workflow }} - ${{ job.status }}
+          body: |
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.branch }}
+            Commit SHA: ${{ github.sha }}
+            Job Status: ${{ job.status }}
 
 # ArgoCD Application annotations
-# image-list: sha-XXXXXX
+# image-list: <image-name>
 # update-strategy: canary
 # sync-policy: automated
-# self-heal: enabled
-# history-size: 10
+# automated:
+#   prune: true
+#   self-heal: true

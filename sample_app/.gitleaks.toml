@@ -1,5 +1,0 @@
-[whitelist]
-  # Add specific whitelist rules here, e.g.,
-  # [whitelist.my-rule]
-  # description = "My custom rule"
-  # regex = "my-secret-pattern"

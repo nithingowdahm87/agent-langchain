@@ -52,6 +52,9 @@ class ProjectContext(BaseModel):
     raw_context_summary: str = Field(default="")
     existing_files: dict[str, str] = Field(default_factory=dict, description="Map of found DevOps files to their paths")
     architecture: list[str] = Field(default_factory=list, description="Detected architectural patterns (e.g. microservices)")
+    microservice_dirs: list[str] = Field(default_factory=list, description="Subdirectories that contain independent microservices (e.g. backend, frontend)")
+    microservice_details: dict[str, Any] = Field(default_factory=dict, description="Per-service metadata: language, frameworks, ports, base_image")
+    databases: dict[str, Any] = Field(default_factory=dict, description="Categorized databases: {rdbms: {name: [svcs]}, cache: {name: [svcs]}, nosql: {name: [svcs]}, broker: {name: [svcs]}}")
 
     @field_validator("ports", mode="before")
     @classmethod

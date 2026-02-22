@@ -12,7 +12,7 @@ class CIWriterA:
         try:
             task = read_file("configs/prompts/cicd/writer.md")
         except Exception:
-            task = "Generate a CI/CD workflow."
+            task = "Generate a CI workflow."
             
         prompt = f"{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
@@ -25,7 +25,7 @@ class CIWriterB:
         try:
             task = read_file("configs/prompts/cicd/writer.md")
         except Exception:
-            task = "Generate a CI/CD workflow."
+            task = "Generate a CI workflow."
             
         prompt = f"{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
@@ -38,7 +38,7 @@ class CIWriterC:
         try:
             task = read_file("configs/prompts/cicd/writer.md")
         except Exception:
-            task = "Generate a CI/CD workflow."
+            task = "Generate a CI workflow."
             
         prompt = f"{task}\n\nAPPLICATION CONTEXT:\n{context}"
         return self.llm.call(prompt)
@@ -98,4 +98,4 @@ class CIExecutor:
         os.makedirs(directory, exist_ok=True)
         path = os.path.join(directory, "main.yml")
         write_file(path, content)
-        print(f"✅ Wrote CI/CD workflow to {path}")
+        print(f"✅ Wrote CI workflow to {path}")

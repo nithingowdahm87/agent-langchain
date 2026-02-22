@@ -37,8 +37,11 @@ class LLMGenerator:
         
     def _clean_markdown(self, info: str) -> str:
         # P0: if this is a multi-file response, do NOT strip code blocks
+        if isinstance(info, list):
+            info = "\n".join([str(i) for i in info])
         if "FILENAME:" in info:
             return info.strip()
+
 
         # Remove code blocks
         if "```" in info:

@@ -23,7 +23,7 @@ _STAGE_CONFIG = {
     "docker": {"policy_dir": "policies/docker", "ext": ".dockerfile", "filename": "Dockerfile"},
     "compose": {"policy_dir": "policies/docker", "ext": ".yml", "filename": "docker-compose.yml"},
     "k8s": {"policy_dir": "policies/k8s", "ext": ".yaml", "filename": "manifest.yaml"},
-    "ci/cd": {"policy_dir": "policies/ci", "ext": ".yml", "filename": "workflow.yml"},
+    "cicd": {"policy_dir": "policies/ci", "ext": ".yml", "filename": "workflow.yml"},
     "observability": {"policy_dir": "policies/k8s", "ext": ".yaml", "filename": "chart.yaml"},
 }
 
@@ -67,7 +67,7 @@ class PolicyValidator:
 
         Args:
             content: The generated file content (Dockerfile, YAML, etc.)
-            stage: Pipeline stage (docker, k8s, ci/cd, etc.)
+            stage: Pipeline stage (docker, k8s, cicd, etc.)
 
         Returns:
             (passed: bool, violations: List[PolicyViolation])
@@ -175,7 +175,7 @@ class PolicyValidator:
             violations.extend(self._check_dockerfile(content, content_lower))
         elif stage == "k8s":
             violations.extend(self._check_k8s(content, content_lower))
-        elif stage == "ci/cd":
+        elif stage == "cicd":
             violations.extend(self._check_ci(content, content_lower))
 
         return violations
@@ -259,7 +259,7 @@ class PolicyValidator:
         return violations
 
     def _check_ci(self, content: str, content_lower: str) -> List[PolicyViolation]:
-        """Built-in CI/CD workflow policy checks."""
+        """Built-in CI workflow policy checks."""
         violations = []
 
         # Check for unpinned actions

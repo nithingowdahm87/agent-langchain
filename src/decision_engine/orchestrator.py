@@ -68,20 +68,133 @@ class V2Orchestrator:
         plan = self.planner.create_plan(context)
         print(f"🏗️  Architecture Plan: {plan.service_type.upper()} | Scaling: {plan.scaling_strategy} | DB: {plan.requires_database}")
         
-        # 2. Execute Stages based on Plan
-        
+        # 2. Print rich analysis summary
+        is_mono = "microservices" not in context.architecture
+        num_dockerfiles = len(context.microservice_dirs) if not is_mono else 1
+
+        dbs = context.databases if context.databases else {}
+
+        # Normalise: old cache stores lists, new stores {name: [svcs]}
+        def _norm(d):
+            if isinstance(d, list): return {k: [] for k in d}
+            if isinstance(d, dict): return d
+            return {}
+        rdbms_dict  = _norm(dbs.get("rdbms", {}))
+        cache_dict  = _norm(dbs.get("cache", {}))
+        nosql_dict  = _norm(dbs.get("nosql", {}))
+        broker_dict = _norm(dbs.get("broker", {}))
+
+        # Fallback legacy
+        if not rdbms_dict and "postgres" in context.architecture: rdbms_dict = {"PostgreSQL": []}
+        if not cache_dict  and "redis"    in context.architecture: cache_dict  = {"Redis": []}
+
+        # Service numbering map {svc -> "#N"}
+        svc_index = {svc: f"#{i+1}" for i, svc in enumerate(context.microservice_dirs)}
+
+        # Global port chain across all services in order
+        all_ports = []
+        for svc in context.microservice_dirs:
+            for p in context.microservice_details.get(svc, {}).get("ports", []):
+                if p not in all_ports:
+                    all_ports.append(p)
+
+        def _db_tag(svcs: list) -> str:
+            if not svcs: return ""
+            parts = [f"{svc_index.get(s, s)} {s}" for s in svcs]
+            return f"  ← {', '.join(parts)}"
+
+        W = 64
+        print("\n" + "=" * W)
+        print("  📋  CODE ANALYSIS SUMMARY")
+        print("=" * W)
+        print(f"  📁  Project       : {context.project_name}")
+        print(f"  🏛️   Architecture  : {'Microservices' if not is_mono else 'Monolith'}")
+        print(f"  🐳  Dockerfiles   : {num_dockerfiles} file(s) will be generated")
+        if all_ports:
+            chain = "  →  ".join(f":{p}" for p in all_ports)
+            print(f"  🔌  Port chain    : {chain}")
+        print()
+
+        # ── Per-service section ─────────────────────────────────────
+        if not is_mono and context.microservice_dirs:
+            print("  ── MICROSERVICES " + "─" * (W - 18))
+            for idx, svc in enumerate(context.microservice_dirs, start=1):
+                detail     = context.microservice_details.get(svc, {})
+                lang       = detail.get("language", "Node.js")
+                frameworks = detail.get("frameworks", [])
+                version    = detail.get("node_version", "?")
+                base_img   = detail.get("base_image", "node:20-alpine")
+                ports      = detail.get("ports", [])
+                key_deps   = detail.get("key_deps", [])
+                role       = detail.get("role", "Microservice")
+                svc_dbs    = detail.get("databases", [])
+
+                fw_str     = f" · {', '.join(frameworks)}" if frameworks else ""
+                port_chain = "  →  ".join([f":{p}" for p in ports]) if ports else "auto"
+
+                print(f"  #{idx}  {svc}/  —  {role}")
+                print(f"       Language    : {lang}{fw_str}")
+                print(f"       Runtime     : {lang} {version}")
+                print(f"       Base image  : {base_img}")
+                print(f"       Port chain  : {port_chain}")
+                if key_deps:
+                    print(f"       Key deps    : {', '.join(key_deps)}")
+                if svc_dbs:
+                    print(f"       Uses DBs    : {', '.join(svc_dbs)}")
+                print()
+
+        # ── Databases section ───────────────────────────────────────
+        has_db = rdbms_dict or cache_dict or nosql_dict or broker_dict
+        if has_db:
+            print("  ── DATABASES " + "─" * (W - 14))
+            for db_name, svcs in rdbms_dict.items():
+                print(f"  🗄️   RDBMS   {db_name:<22}{_db_tag(svcs)}")
+            for db_name, svcs in cache_dict.items():
+                print(f"  ⚡  Cache   {db_name:<22}{_db_tag(svcs)}")
+            for db_name, svcs in nosql_dict.items():
+                print(f"  🍃  NoSQL   {db_name:<22}{_db_tag(svcs)}")
+            for db_name, svcs in broker_dict.items():
+                print(f"  📨  Broker  {db_name:<22}{_db_tag(svcs)}")
+            print()
+
+        if context.env_vars:
+            print("  ── CONFIGURATION " + "─" * (W - 18))
+            shown = context.env_vars[:7]
+            print(f"  🔐  Env vars      : {', '.join(shown)}{' ...' if len(context.env_vars) > 7 else ''}")
+            print()
+
+        print("=" * W + "\n")
+
+
+        # 3. Execute Stages based on Plan
+
         # --- STAGE: Scan & Observability (NEW) ---
-        self._execute_stage("Scan & Observability", "scan", project_path, context, plan)
+        # self._execute_stage("Scan & Observability", "scan", project_path, context, plan)
+
 
         # --- STAGE: Docker ---
         self._execute_stage("Dockerfile", "dockerfile", project_path, context, plan)
+
+        # --- STAGE: Docker Compose ---
+        self._execute_stage("Docker Compose", "docker_compose", project_path, context, plan)
         
         # --- STAGE: K8s ---
         # Only if applicable (e.g. not serverless, though we assume K8s for now)
         self._execute_stage("Kubernetes Manifests", "kubernetes", project_path, context, plan)
         
-        # --- STAGE: CI/CD ---
-        self._execute_stage("CI/CD Pipeline", "cicd", project_path, context, plan)
+        # --- STAGE: CI Pipeline ---
+        self._execute_stage("CI Pipeline", "cicd", project_path, context, plan)
+
+        print("\n🎉 Pipeline Execution Completed Successfully!")
+        import os
+        for f in [".devops_context.json", ".devops_memory.json"]:
+            fpath = os.path.join(project_path, f)
+            if os.path.exists(fpath):
+                try: os.remove(fpath)
+                except Exception: pass
+        import sys
+        sys.exit(0)
+
         
     def _execute_stage(self, display_name: str, stage_key: str, project_path: str, context: ProjectContext, plan: ArchitecturePlan):
         print(f"\n--- Stage: {display_name} ---")
@@ -94,13 +207,51 @@ class V2Orchestrator:
         # Fallback for CI/CD which might only have one
         if stage_key == "cicd": prompt_name = "github_actions_unified"
         if stage_key == "scan": prompt_name = "scan_config"
+        
+        # Directory names might differ slightly from stage keys
+        prompt_dir = stage_key
+        if stage_key == "docker_compose": 
+            prompt_dir = "compose"
+            prompt_name = "writer"  # There's no writer_a_generalist for compose
             
         try:
-            template = load_prompt(stage_key, prompt_name)
+            template = load_prompt(prompt_dir, prompt_name)
         except Exception:
             # Fallback logic if specific prompt missing
             template = load_prompt(stage_key, "writer_a_generalist")
             if stage_key == "scan": template = load_prompt("security", "scan_config")
+            if stage_key == "docker_compose": template = load_prompt("compose", "writer")
+            
+        # Optional User Input for K8s & Dockerfile
+        custom_instructions = ""
+        if stage_key == "kubernetes" or stage_key == "dockerfile":
+            if stage_key == "kubernetes":
+                template += "\n\nCRITICAL: Output EACH Kubernetes resource (Deployment, Service, Ingress, Secrets, ConfigMap, Namespace etc.) in its OWN SEPARATE file using the FILENAME format: \nFILENAME: k8s/filename.yaml\n```yaml\n<content>\n```"
+                print("\n" + "="*50)
+                print("☸️   KUBERNETES MANIFEST CUSTOMIZATION")
+                print("="*50)
+            if stage_key == "dockerfile" and len(context.microservice_dirs) > 0:
+                dirs = ", ".join(context.microservice_dirs)
+                template += f"\n\nCRITICAL: Automatically output EACH Dockerfile in its respective directory using the FILENAME format (e.g., frontend/Dockerfile, backend/Dockerfile). These are the required directories to cover: {dirs}\nFILENAME: <dir>/Dockerfile\n```dockerfile\n<content>\n```"
+            else:
+                user_input = input(f"Would you like to provide custom instructions for {display_name}? [y/N]: ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print("Options for Custom Instructions:")
+                    print("  1. Type instructions directly")
+                    print("  2. Provide a path to a file with instructions")
+                    choice = input("Choice (1/2): ").strip()
+                    if choice == '1':
+                        custom_instructions = input("Enter instructions: ").strip()
+                    elif choice == '2':
+                        filepath = input("Enter file path: ").strip()
+                        try:
+                            from src.tools.file_ops import read_file
+                            custom_instructions = read_file(filepath)
+                        except Exception as e:
+                            print(f"Failed to read file: {e}")
+                    
+                    if custom_instructions:
+                        template += f"\n\nUSER CUSTOM INSTRUCTIONS (MUST FOLLOW):\n{custom_instructions}"
             
         # 2. Generate Drafts (Parallel)
         prompt_context = {
@@ -129,16 +280,41 @@ class V2Orchestrator:
         # Let's add a "Grader" step? 
         # For now, we will assign mock scores to test the flow.
         for c in candidates:
-            # Mock grading
-            c.security_score = 80 + (len(c.file_content) % 20) 
-            c.best_practice_score = 85
-        
+            content = c.file_content.lower()
+            # --- Security heuristics (0-100) ---
+            sec = 60  # base
+            if "user " in content and ("adduser" in content or "useradd" in content or "nonroot" in content):
+                sec += 15  # non-root user present
+            if ":latest" not in content:
+                sec += 10  # no latest tags
+            if "no-cache" in content or "--no-cache-dir" in content or "rm -rf /var/lib" in content:
+                sec += 10  # cache cleaned in layer
+            if "copy .env" not in content and "env password" not in content:
+                sec += 5   # no secrets in image
+            c.security_score = min(100, sec)
+
+            # --- Best-practice heuristics (0-100) ---
+            bp = 60  # base
+            if "as builder" in content:
+                bp += 15  # multi-stage build
+            if "workdir" in content:
+                bp += 10  # WORKDIR used
+            if 'cmd ["' in content or "cmd ['":
+                bp += 10  # exec form CMD
+            if "label org.opencontainers" in content or "label maintainer" in content:
+                bp += 5   # OCI labels
+            c.best_practice_score = min(100, bp)
+
+        # Model agreement score: ratio of generators that returned useful content
+        useful = sum(1 for c in candidates if len(c.file_content.strip()) > 100)
+        model_agreement = useful / max(len(candidates), 1)
+
         if not candidates:
             print("❌ All generators failed.")
             return
 
         best_spec, best_score = self.evaluator.evaluate_candidates(candidates)
-        print(f"🏆 Selected Draft from {best_spec.model_name} (Score: {best_score})")
+        print(f"🏆 Selected Draft from {best_spec.model_name} (Score: {best_score:.1f})")
         
         # 4. Repair Loop
         # Validator? We need specific validators for each stage.
@@ -146,7 +322,7 @@ class V2Orchestrator:
         final_content = best_spec.file_content
         
         # 5. Confidence & Decision
-        confidence_val = compute_confidence(best_spec, repair_attempts=0)
+        confidence_val = compute_confidence(best_spec, repair_attempts=0, model_agreement_score=model_agreement)
         decision = decide_action(confidence_val)
         
         print(f"🤖 Confidence: {confidence_val:.1f}% -> Action: {decision.action.upper()}")
@@ -154,6 +330,18 @@ class V2Orchestrator:
         
         # 6. User Gate (if required)
         if decision.requires_human_gate:
+            print("\n" + "="*50)
+            print("📝  GENERATED DRAFTS PREVIEW")
+            print("="*50)
+            for idx, c in enumerate(candidates):
+                print(f"\n--- Draft {idx+1} ({c.model_name}) ---")
+                print(c.file_content)
+            print("\n" + "="*50)
+            print("🏆  FINAL SELECTED DRAFT")
+            print("="*50)
+            print(final_content)
+            print("="*50 + "\n")
+            
             user_input = input(f"Proceed with {display_name}? [y/n/edit]: ").lower()
             if user_input != 'y':
                 print("Skipping write.")
@@ -162,7 +350,10 @@ class V2Orchestrator:
         # 7. Write Output
         # Determine filename based on stage
         filename = "Dockerfile"
-        if stage_key == "kubernetes": filename = "k8s/manifest.yaml"
+        if stage_key == "dockerfile" or stage_key == "kubernetes":
+            self._handle_multifile_output(final_content, project_path)
+            return
+        if stage_key == "docker_compose": filename = "docker-compose.yml"
         if stage_key == "cicd": filename = ".github/workflows/main.yml"
         if stage_key == "scan": 
             # Scan stage writes multiple files in executor/generator. 

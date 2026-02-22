@@ -1,4 +1,0 @@
-# Add suppression rules in the following format:
-# Rule ID  | Rule Description | URL | Evidence
-# ---------|-------------------|-----|---------
-# my-rule   | My custom rule    | https://example.com | My evidence

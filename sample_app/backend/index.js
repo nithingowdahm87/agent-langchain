@@ -1,31 +1,35 @@
-require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+const port = process.env.PORT || 3000;
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 5432,
+    database: process.env.DB_NAME || 'appdb',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
 });
+
+app.use(cors());
+app.use(express.json());
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-app.get('/api/users', async (req, res) => {
+app.get('/api/items', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM users');
+        const result = await pool.query('SELECT * FROM items');
         res.json(result.rows);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Database error' });
+        res.status(500).json({ error: err.message });
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Backend running on port ${PORT}`);
+app.listen(port, () => {
+    console.log(`Backend running on port ${port}`);
 });

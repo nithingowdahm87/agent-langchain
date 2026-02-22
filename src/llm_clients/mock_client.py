@@ -37,9 +37,9 @@ description = "Global allowlist"
 ```
 """
 
-        if "github actions" in prompt_lower or "ci/cd" in prompt_lower:
+        if "github actions" in prompt_lower or "ci" in prompt_lower:
             return """
-name: CI/CD — DevSecOps Pipeline
+name: CI — DevSecOps Pipeline
 
 on:
   push:
