@@ -48,28 +48,27 @@ The architecture currently defaults to using `GroqClient` for extreme low-latenc
 
 ## 🛠 Running the Model
 
-Simply point the orchestrator at your local repository.
+The absolute easiest way to run the pipeline is using the provided `run_agent.sh` script, which automatically sources the virtual environment and `.env` variables for you.
+
+Simply point the orchestrator at your local repository:
 
 ```bash
-# Activate your environment
-source venv/bin/activate
-
 # Start the interactive CLI
-python agent.py
+./run_agent.sh
 ```
 
 Or run it directly targeting a path and task:
 ```bash
 # Generate Dockerfile + Kubernetes + CI/CD sequentially 
-python agent.py all
+./run_agent.sh all
 
 # When prompted, enter your path, e.g.
 # > Enter project path: sample_app
 
 # Alternatively, run one specific task:
-python agent.py docker
-python agent.py k8s
-python agent.py ci
+./run_agent.sh docker
+./run_agent.sh k8s
+./run_agent.sh ci
 ```
 
 ### Prompt Input
